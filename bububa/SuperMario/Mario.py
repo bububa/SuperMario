@@ -121,7 +121,7 @@ HEADERS = {
     'Accept-Encoding': 'gzip,deflate',
     'Connection': 'keep-alive',
     'Keep-Alive': '300',
-    'Accept': '*/*'
+    'Accept': 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
 }
 REFERER = 'http://boketing.com/'
 
@@ -164,7 +164,7 @@ class MarioBase(object):
       @ivar progress: a function callback which takes four arguments: C{download_total}, C{download_done},
                       C{upload_total} and C{upload_done}.
       """
-    def __init__(self, callback=None, callpre=None, callfail=None, timeout=300, user_agent=USER_AGENT['safari'], referer = REFERER, secure=True, progress=False, proxy=False, check_duplicate=False, verbose=False, args=None):
+    def __init__(self, callback=None, callpre=None, callfail=None, timeout=15, user_agent=None, referer = REFERER, secure=True, progress=False, proxy=False, check_duplicate=False, verbose=False, args=None):
         self.callback = callback
         self.callpre = callpre
         self.callfail = callfail
@@ -175,6 +175,7 @@ class MarioBase(object):
         self.progress = progress
         self.check_duplicate = check_duplicate
         self.proxy = proxy
+        self.proxies = None
         self.secure = True
         self.args = args
         #self.lightcloud = LightCloud.connect('n1')
@@ -185,7 +186,10 @@ class MarioBase(object):
         if callable(self.callpre): self.callpre(url)
         c = pycurl.Curl()
         if headers:
-            headers.setdefault('User-Agent', self.user_agent)
+            if self.user_agent:
+                headers.setdefault('User-Agent', self.user_agent)
+            else:
+                headers.setdefault('User-Agent', self.random_user_agent())
             header_list = []
             for header_name, header_value in headers.iteritems():
                 header_list.append('%s: %s' % (header_name, header_value))
@@ -197,6 +201,8 @@ class MarioBase(object):
             logger.debug('post')
             c.setopt(pycurl.POST, 1)
             c.setopt(pycurl.POSTFIELDS, body)
+        else:
+            c.setopt(pycurl.HTTPGET, 1)
         c.url = url
         c.args = args
         c.setopt(pycurl.ENCODING, 'gzip, deflate')
@@ -213,12 +219,22 @@ class MarioBase(object):
             c.setopt(pycurl.URL, URL.quote(url))
         except:
             return None
-        cookie_file_name = os.tempnam()
-        c.setopt(pycurl.COOKIEFILE, cookie_file_name)
-        c.setopt(pycurl.COOKIEJAR, cookie_file_name)
+        cookies = self.parse_cookies(c)
+        if cookies:
+            c.setopt(pycurl.COOKIELIST, '')
+            chunks = []
+            for key, value in cookies.iteritems():
+                key = urllib.quote_plus(key)
+                value = urllib.quote_plus(value)
+                chunks.append('%s=%s;' % (key, value))
+                c.setopt(pycurl.COOKIE, ''.join(chunks))
+        else:
+            cookie_file_name = os.tempnam()
+            c.setopt(pycurl.COOKIEFILE, cookie_file_name)
+            c.setopt(pycurl.COOKIEJAR, cookie_file_name)
         
         if self.referer:
-            c.setopt(pycurl.REFERER, REFERER)
+            c.setopt(pycurl.REFERER, self.referer)
             
         if self.verbose:
             c.setopt(pycurl.VERBOSE, True)
@@ -228,8 +244,15 @@ class MarioBase(object):
             c.setopt(pycurl.NOPROGRESS, False)
             c.setopt(pycurl.PROGRESSFUNCTION, self.progress)
         
+        if self.proxies: self.proxy = random.choice(self.proxies)
+        
         if self.proxy:
-            c.setopt(pycurl.PROXY, self.proxy)
+            c.setopt(pycurl.PROXY, self.proxy['url'])
+            if 'userpwd' in self.proxy:
+                c.setopt(pycurl.PROXYUSERPWD, self.proxy['proxy_userpwd'])
+            if 'type' in self.proxy:
+                ptype = getattr(pycurl, 'PROXYTYPE_%s' % self.proxy['type'].upper())
+                c.setopt(pycurl.PROXYTYPE, ptype)
         
         if self.secure:
             c.setopt(pycurl.SSL_VERIFYPEER, False)
@@ -237,6 +260,26 @@ class MarioBase(object):
         logger.debug('connected to %r'%url)
         return c
     
+    def set_referer(self, referer):
+        self.referer = referer
+        
+    def set_proxy(self, proxy):
+        self.proxy = proxy
+    
+    def set_proxies_list(self, proxies):
+        return self.proxies
+        
+    def parse_cookies(self, c):
+        cookies = {}
+        for line in c.getinfo(pycurl.INFO_COOKIELIST):
+            chunks = line.split('\t')
+            cookies[chunks[-2]] = chunks[-1]
+        return cookies
+                
+    def random_user_agent(self):
+        variants = ("Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 1.1.4322)", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 2.0.50727)", "Mozilla/4.0 (compatible; MSIE 7.0b; Windows NT 5.1)", "Mozilla/4.0 (compatible; MSIE 7.0b; Win32)", "Mozilla/4.0 (compatible; MSIE 7.0b; Windows NT 6.0)", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; SV1; Arcor 5.005; .NET CLR 1.0.3705; .NET CLR 1.1.4322)", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; YPC 3.0.1; .NET CLR 1.1.4322; .NET CLR 2.0.50727)", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0; WOW64; SLCC1; .NET CLR 2.0.50727; .NET CLR 3.0.04506; .NET CLR 3.5.21022)", "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; WOW64; SLCC1; .NET CLR 2.0.50727; .NET CLR 3.0.04506; .NET CLR 3.5.21022)", "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; WOW64; Trident/4.0; SLCC1; .NET CLR 2.0.50727; .NET CLR 3.5.21022; .NET CLR 3.5.30729; .NET CLR 3.0.30618)", "Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.8.1) Gecko/20060601 Firefox/2.0 (Ubuntu-edgy)", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.1) Gecko/20061204 Firefox/2.0.0.1", "Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.2) Gecko/20070220 Firefox/2.0.0.2", "Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.2) Gecko/20070221 SUSE/2.0.0.2-6.1 Firefox/2.0.0.2", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.8.1.9) Gecko/20071025 Firefox/2.0.0.9", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.8.1.17) Gecko/20080829 Firefox/2.0.0.17", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.8.1.19) Gecko/20081201 Firefox/2.0.0.19", "Mozilla/5.0 (X11; U; Linux i686 (x86_64); en-US; rv:1.9a1) Gecko/20061204 GranParadiso/3.0a1", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9) Gecko/2008052906 Firefox/3.0", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9.0.1) Gecko/2008070208 Firefox/3.0.1", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9.0.2) Gecko/2008091620 Firefox/3.0.2", "Mozilla/5.0 (X11; U; Linux x86_64; en; rv:1.9.0.2) Gecko/2008092702 Gentoo Firefox/3.0.2", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3 (.NET CLR 3.5.30729)", "Mozilla/5.0 (Windows; U; Windows NT 6.0; en; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3", "Mozilla/5.0 (Windows; U; Windows NT 5.2; en; rv:1.9.0.5) Gecko/2008120122 Firefox/3.0.5", "Opera/9.0 (Windows NT 5.1; U; en)", "Opera/9.01 (X11; Linux i686; U; en)", "Opera/9.02 (Windows NT 5.1; U; en)", "Opera/9.10 (Windows NT 5.1; U; en)", "Opera/9.23 (Windows NT 5.1; U; en)", "Opera/9.50 (Windows NT 5.1; U; en)", "Opera/9.50 (Windows NT 6.0; U; en)", "Opera/9.60 (Windows NT 5.1; U; en) Presto/2.1.1")
+        return random.choice(variants)
+        
     def _handle_response(self, c):
         """Handle the response.
         This method decodes the response to unicode and checks for any error
@@ -330,8 +373,10 @@ class MarioBase(object):
 
 class Mario(MarioBase):
     
-    def get(self, url, normalize=True, body=None, headers=HEADERS):
+    def get(self, url, normalize=True, body=None, headers=HEADERS, referer=None, proxy=None):
         self.url = url
+        if referer: self.set_referer(referer)
+        if proxy: self.set_proxy(proxy)
         c = self.connect(url=url, normalize=normalize, body=body, headers=headers)
         return self._perform(c)
     
@@ -498,10 +543,10 @@ class MarioRss:
         self.check_duplicate = check_duplicate
         self.link_title_db = LinkTitleDB()
     
-    def get(self, starturl, rssurl=None, rssBody=None, limit=None):
-        if not rssurl: rssurl = self.get_rss_url(starturl)
+    def get(self, starturl, rssurl=None, rssBody=None, limit=None, proxy=None):
+        if not rssurl: rssurl = self.get_rss_url(starturl, proxy=proxy)
         elif not rssurl.startswith('http://feeds.feedburner.com'): 
-            mario = Mario()
+            mario = Mario(proxy=proxy)
             rssurl = mario.effective_url(rssurl)
         if not rssurl:
             logger.debug("Didn't find rss feed for %s"%starturl)
@@ -517,7 +562,7 @@ class MarioRss:
         rss = feedparser.parse(rssBody)
         if not rss['entries']: return None
         if limit: rss['entries'] = rss['entries'][:limit]
-        mario = MarioBatch(callback=self.callback, callpre=self.callpre, callfail=self.callfail, check_duplicate=self.check_duplicate)
+        mario = MarioBatch(callback=self.callback, callpre=self.callpre, callfail=self.callfail, check_duplicate=self.check_duplicate, referer=rssurl, proxy=proxy)
         pool = coros.CoroutinePool(max_size=len(rss['entries']))
         waiters = []
         for entry in rss['entries']:
@@ -536,8 +581,8 @@ class MarioRss:
         self.link_title_db.add(entry['link'], '', entry['title'], entry)
         return
         
-    def get_rss_url(self, starturl):
-        mario = Mario()
+    def get_rss_url(self, starturl, proxy=None):
+        mario = Mario(referer=starturl, proxy=proxy)
         response = mario.get(starturl)
         if not response: return None
         return URL.rss_link(starturl, response.body)
@@ -559,6 +604,7 @@ class MarioDepth:
         self.reject_url_patterns = reject_url_patterns
         self.robotstxt = RobotFileParser()
         self.robotstxt.set_url(urljoin(starturl, '/robots.txt'))
+        self.referer = starturl
         try:
             self.robotstxt.read()
         except:
@@ -608,6 +654,7 @@ class MarioDepth:
         self.crawled[response.effective_url] = 2
         if response.effective_url != response.url:
             self.crawled[response.url] = 2
+        self.referer = response.effective_url
     
     def inject_url(self, url, depth):
         if not (depth and url and url not in self.crawled): 
