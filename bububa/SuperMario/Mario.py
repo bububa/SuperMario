@@ -1,0 +1,634 @@
+#!/usr/bin/env python
+# encoding: utf-8
+"""
+Mario.py
+
+Created by Syd on 2009-08-28.
+Copyright (c) 2009 __ThePeppersStudio__. All rights reserved.
+"""
+
+import sys, os, re
+import time, logging
+from itertools import islice
+import pycurl
+import chardet
+import feedparser
+from urlparse import urljoin
+from urllib import quote
+from robotparser import RobotFileParser
+from eventlet.api import with_timeout
+from eventlet import coros
+from bububa.SuperMario.utils import Traceback
+from bububa.SuperMario.utils import URL
+#from bububa.SuperMario.Storage import LightCloud
+
+try: 
+    from cStringIO import StringIO 
+except ImportError: 
+    from StringIO import StringIO
+
+if os.name == 'posix': 
+    # 使用pycurl.NOSIGNAL选项时忽略信号SIGPIPE 
+    import signal 
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN) 
+    del signal
+
+_concurrent = 10
+_Version = "1.2.2"
+
+_curlinfo = (
+  ("total-time", pycurl.TOTAL_TIME),
+  ("upload-speed", pycurl.SPEED_UPLOAD),
+  ("download-speed", pycurl.SPEED_DOWNLOAD),
+)
+
+logger = logging.getLogger("mario")
+handler = logging.StreamHandler()
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
+class LinkTitleDB:
+    
+    def __init__(self):
+        self.dic = {}
+        return
+    
+    def add(self, url, from_url, title, context=None):
+        if url not in self.dic: self.dic[url] = []
+        self.dic[url].append((from_url, title, context))
+        return
+    
+    def dump(self):
+        fp = StringIO()
+        for (url, strs) in self.dic.iteritems():
+            fp.write(repr((url, strs)))
+            fp.write('\n')
+        return fp.getvalue()
+
+
+class MarioException(Exception):
+    """Representation of a Mario exception."""
+    def __init__(self, message, code=0):
+        super(MarioException, self).__init__(message)
+        self.code = code
+    
+    def __str__(self):
+        return "%s (code=%d)" % (super(MarioException, self).__str__(), self.code)
+        __repr__ = __str__
+
+
+class HTTPException(MarioException):
+    """An exception thrown during http(s) communication."""
+    pass
+
+ALT_CODECS = {
+  'euc': 'euc-jp',
+  'x-euc-jp': 'euc-jp',
+  'x-sjis': 'ms932',
+  'x-sjis-jp': 'ms932',
+  'shift-jis': 'ms932',
+  'shift_jis': 'ms932',
+  'sjis': 'ms932',
+  'gb2312': 'gb18030',
+  'gb2312-80': 'gb18030',
+  'gb-2312': 'gb18030',
+  'gb_2312': 'gb18030',
+  'gb_2312-80': 'gb18030',
+}
+ 
+# 支持的协议 
+VALIDPROTOCOL = ('http', 'https', 'news', 'snews', 'nntp', 'snntp', 'ftp', 'file') 
+# HTTP状态码 
+STATUS_OK = (200, 203, 206) 
+STATUS_ERROR = range(400, 600) 
+STATUS_REDIRECT = (301, 302, 303, 307)
+# 最小数据片大小(128kb) 
+MINPIECESIZE = 131072 
+# 最大连接数 
+MAXCONCOUNT = 10 
+# 最大重试数 
+MAXRETRYCOUNT = 3
+# 日志级别 
+LOGLEVEL = logging.DEBUG 
+# 清屏命令 
+CLS = 'cls' if os.name == 'nt' else 'clear'
+# UserAgent Definition
+USER_AGENT = {'safari':'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_1; en-us) AppleWebKit/531.21.8 (KHTML, like Gecko) Version/4.0.4 Safari/531.21.10', 'firefox':'Mozilla/5.0 (X11; U; Linux i686 (x86_64); de; rv:1.9.1) Gecko/20090624 Firefox/3.5'}
+
+HEADERS = {
+    'User-Agent': USER_AGENT['safari'],
+    'Accept-Encoding': 'gzip,deflate',
+    'Connection': 'keep-alive',
+    'Keep-Alive': '300',
+    'Accept': '*/*'
+}
+REFERER = 'http://boketing.com/'
+
+class HTTPResponse(object):
+    
+    def __init__(self, url=None, effective_url=None, size=None, code=None, headers=None, body=None, args=None):
+        if isinstance(url, unicode): url = url.encode('utf-8')
+        if isinstance(effective_url, unicode): effective_url = effective_url.encode('utf-8')
+        if isinstance(body, unicode): body = body.encode('utf-8')
+        self.url = url
+        self.effective_url = effective_url
+        self.size = size
+        self.code = code
+        self.body = body
+        self.args = args
+    
+    def __repr__(self):
+        return "<%s status %s for %s>" % (self.__class__.__name__, self.code, self.effective_url.decode('utf-8'))
+    
+    def dump(self):
+        fp = StringIO()
+        fp.write(repr({'url':self.url, 'effective_url':self.effective_url, 'size':self.size, 'code':self.code, 'body':self.body}))
+        return fp.getvalue()
+
+                                         
+class MarioBase(object):
+    """Abstract functionality for Mario API clients.
+
+      @type secure: bool
+      @ivar secure: whether to use a secure http connection
+      @type sessionId: string
+      @ivar sessionId: session id from smugmug.
+      @type proxy: url
+      @ivar proxy: address of proxy server if one is required (http[s]://localhost[:8080])
+      @type version: string
+      @ivar version: which version of the SmugMug API to use
+      @type verbose: function
+      @ivar verbose: a function callback which takes two arguments: C{infotype} and C{message}.
+      @type progress: function
+      @ivar progress: a function callback which takes four arguments: C{download_total}, C{download_done},
+                      C{upload_total} and C{upload_done}.
+      """
+    def __init__(self, callback=None, callpre=None, callfail=None, timeout=300, user_agent=USER_AGENT['safari'], referer = REFERER, secure=True, progress=False, proxy=False, check_duplicate=False, verbose=False, args=None):
+        self.callback = callback
+        self.callpre = callpre
+        self.callfail = callfail
+        self.timeout = timeout
+        self.user_agent = user_agent
+        self.referer = referer
+        self.verbose = verbose
+        self.progress = progress
+        self.check_duplicate = check_duplicate
+        self.proxy = proxy
+        self.secure = True
+        self.args = args
+        #self.lightcloud = LightCloud.connect('n1')
+    
+    def connect(self, url, body=None, headers=HEADERS, normalize=True, args=None):
+        url = URL.normalize(url, normalize)
+        #if self.check_duplicate and URL.been_inserted(url, self.lightcloud): return None
+        if callable(self.callpre): self.callpre(url)
+        c = pycurl.Curl()
+        if headers:
+            headers.setdefault('User-Agent', self.user_agent)
+            header_list = []
+            for header_name, header_value in headers.iteritems():
+                header_list.append('%s: %s' % (header_name, header_value))
+            if header_list:
+                c.setopt(pycurl.HTTPHEADER, header_list)
+        #c.setopt(c.USERAGENT, self.user_agent)
+        # Presence of a body indicates that we should do a POST
+        if body is not None:
+            logger.debug('post')
+            c.setopt(pycurl.POST, 1)
+            c.setopt(pycurl.POSTFIELDS, body)
+        c.url = url
+        c.args = args
+        c.setopt(pycurl.ENCODING, 'gzip, deflate')
+        c.setopt(pycurl.FOLLOWLOCATION, 1) 
+        c.setopt(pycurl.MAXREDIRS, 5) 
+        c.setopt(pycurl.CONNECTTIMEOUT, 30) 
+        c.setopt(pycurl.TIMEOUT, self.timeout) 
+        c.setopt(pycurl.NOSIGNAL, 1)
+        c.response = StringIO()
+        #c.header_data = StringIO()
+        c.setopt(pycurl.WRITEFUNCTION, c.response.write)
+        #c.setopt(pycurl.HEADERFUNCTION, c.header_data.write)
+        try:
+            c.setopt(pycurl.URL, URL.quote(url))
+        except:
+            return None
+        cookie_file_name = os.tempnam()
+        c.setopt(pycurl.COOKIEFILE, cookie_file_name)
+        c.setopt(pycurl.COOKIEJAR, cookie_file_name)
+        
+        if self.referer:
+            c.setopt(pycurl.REFERER, REFERER)
+            
+        if self.verbose:
+            c.setopt(pycurl.VERBOSE, True)
+            c.setopt(pycurl.DEBUGFUNCTION, self.verbose)
+        
+        if self.progress:
+            c.setopt(pycurl.NOPROGRESS, False)
+            c.setopt(pycurl.PROGRESSFUNCTION, self.progress)
+        
+        if self.proxy:
+            c.setopt(pycurl.PROXY, self.proxy)
+        
+        if self.secure:
+            c.setopt(pycurl.SSL_VERIFYPEER, False)
+            c.setopt(pycurl.SSL_VERIFYHOST, False) 
+        logger.debug('connected to %r'%url)
+        return c
+    
+    def _handle_response(self, c):
+        """Handle the response.
+        This method decodes the response to unicode and checks for any error
+        condition.  It additionally adds a C{Statistics} item to the response
+        which contains upload & download times.
+        
+        @type c: PycURL C{Curl}
+        @param c: a completed connection
+        @return: a dictionary of results corresponding to the response
+        @raise MarioException: if an error exists in the response
+        """
+        
+        code = c.getinfo(c.HTTP_CODE)
+        if c.errstr() == '' and c.getinfo(pycurl.RESPONSE_CODE) in STATUS_OK or code == 200:
+            effective_url = c.getinfo(pycurl.EFFECTIVE_URL)
+            size = int(c.getinfo(pycurl.CONTENT_LENGTH_DOWNLOAD))
+        else:
+            if callable(self.callfail): self.callfail(c.url)
+            raise HTTPException(c.errstr(), code)
+            return None
+        #if self.check_duplicate and URL.been_inserted(effective_url, self.lightcloud): return None
+        body = c.response.getvalue()
+        try:
+            charset = chardet.detect(body)
+            if charset and charset['encoding'] and charset['encoding'].lower()!='utf-8' and charset['encoding'].lower()!='iso-8859-2':
+                charset['encoding'] = charset['encoding'].lower()
+                if charset['encoding'] in ALT_CODECS: charset['encoding'] = ALT_CODECS[charset['encoding']]
+                body = body.decode(charset['encoding']).encode('utf-8')
+            #else:
+                #pattern = re.compile('<meta http-equiv="Content-Type" content="text/html; charset=([^^].*?)"', re.I|re.S)
+                #encoding = pattern.findall(body)
+                #if encoding:
+                    #encoding = encoding[0].lower()
+                    #if encoding in ALT_CODECS: encoding = ALT_CODECS[encoding]
+                    #body = body.decode(encoding).encode('utf-8')
+        except UnicodeDecodeError, err:
+            if callable(self.callfail): self.callfail(effective_url)
+            logger.error('Encoding error: %r'%c.url)
+            logger.error(err)
+            return None
+        response = HTTPResponse(url=c.url, effective_url=URL.normalize(effective_url), size=size, code=code, body=body, args=c.args)
+        logger.debug(response)
+        try:
+            if callable(self.callback): self.callback(response)
+            return response
+        except:
+            if callable(self.callfail): self.callfail(effective_url)
+            logger.error('Error: %r'%Traceback())
+            return None
+    
+    def _handle_response_header(self, c):
+        """Handle the response.
+        This method decodes the response to unicode and checks for any error
+        condition.  It additionally adds a C{Statistics} item to the response
+        which contains upload & download times.
+
+        @type c: PycURL C{Curl}
+        @param c: a completed connection
+        @return: a dictionary of results corresponding to the response
+        @raise MarioException: if an error exists in the response
+        """
+
+        code = c.getinfo(c.HTTP_CODE)
+        if c.errstr() == '' and c.getinfo(pycurl.RESPONSE_CODE) in STATUS_OK or code == 200:
+            effective_url = c.getinfo(pycurl.EFFECTIVE_URL)
+            size = int(c.getinfo(pycurl.CONTENT_LENGTH_DOWNLOAD))
+        else:
+            if callable(self.callfail): self.callfail(c.url)
+            raise HTTPException(c.errstr(), code)
+            return None
+        #if self.check_duplicate and URL.been_inserted(effective_url, self.lightcloud): return None
+        return URL.normalize(effective_url)
+    
+    def _perform(self, c):
+        """Execute the request.
+        
+        A request pending execution.
+        
+        @type c: PycURL C{Curl}
+        @param c: a pending request
+        """
+        pass
+            
+    def close(self, c):
+        c.close()
+    
+    def batch(self):
+        """Return an instance of a batch-oriented Mario client."""
+        return MarioBatch(secure=self.secure, proxy=self.proxy, verbose=self.verbose, progress=self.progress)
+
+
+class Mario(MarioBase):
+    
+    def get(self, url, normalize=True, body=None, headers=HEADERS):
+        self.url = url
+        c = self.connect(url=url, normalize=normalize, body=body, headers=headers)
+        return self._perform(c)
+    
+    def effective_url(self, url, normalize=True, body=None, headers=HEADERS):
+        self.url = url
+        c = self.connect(url=url, normalize=normalize, body=body, headers=headers)
+        return self._effective_url(c)
+        
+    def _perform(self, c):
+        """Perform the low-level communication with Mario."""
+        try:
+            c.perform()
+            return self._handle_response(c)
+        except HTTPException:
+            if self.url.endswith('/'):
+                return self.get(self.url[:-1], False)
+            return None
+        except:
+            logger.error(Traceback())
+            return None
+        finally:
+            c.close()
+    
+    def _effective_url(self, c):
+        """Perform the low-level communication with Mario."""
+        try:
+            c.perform()
+            return self._handle_response_header(c)
+        except HTTPException:
+            if self.url.endswith('/'):
+                return self.effective_url(self.url[:-1], False)
+            return None
+        except:
+            logger.error(Traceback())
+            return None
+        finally:
+            c.close()
+
+
+class MarioBatch(MarioBase):
+    """Batching version of a Mario client.
+        
+    @type _batch: list<PycURL C{Curl}>
+    @ivar _batch: list of requests pending executions
+    @type concurrent: int
+    @ivar concurrent: number of concurrent requests to execute
+    """
+    def __init__(self, *args, **kwargs):
+        concurrent = kwargs.pop("concurrent", _concurrent)
+        super(MarioBatch, self).__init__(*args, **kwargs)
+        self._batch = list()
+        self.concurrent = concurrent
+    
+    def add_job(self, url, body=None, headers=HEADERS, args=None):
+        c = self.connect(url, body, headers, True, args)
+        self._perform(c)
+    
+    def _perform(self, c):
+        """Store the request for later processing."""
+        if c: self._batch.append(c)
+        return None
+    
+    def __len__(self):
+        return len(self._batch)
+    
+    def __call__(self, n=None):
+        """Execute all pending requests.
+        @type n: int
+        @param n: maximum number of simultaneous connections
+        @return: a generator of results from the batch execution - order independent
+        """
+        try:
+            return self._multi(self._batch[:], self._handle_response, n=n)
+        except:
+            logger.error(Traceback())
+        finally:
+            self._batch = list()
+    
+    def _handle_response(self, c):
+        """Catch any exceptions and return a valid response.  The default behaviour
+        is to raise the exception immediately but in a batch environment this is not
+        acceptable.
+        
+        @type c: PycURL C{Curl}
+        @param c: a completed connection
+        """
+        try:
+            return super(MarioBatch, self)._handle_response(c)
+        except Exception, e:
+            logger.debug('Error: %r'%Traceback())
+            return {"exception":e, "stat":"fail", "code":-1}
+        finally:
+            c.close()
+    
+    def _multi(self, batch, func, n=None):
+        """Perform the concurrent execution of all pending requests.
+        
+        This method iterates over all the outstanding working at most
+        C{n} concurrently.  On completion of each request the callback
+        function C{func} is invoked with the completed PycURL instance
+        from which the C{params} and C{response} can be extracted.
+        
+        There is no distinction between a failure or success reponse,
+        both are C{yield}ed.
+        
+        After receiving I{all} responses, the requests are closed.
+        
+        @type batch: list<PycURL C{Curl}>
+        @param batch: a list of pending requests
+        @param func: callback function invoked on each completed request
+        @type n: int
+        @param n: the number of concurrent events to execute
+        """
+        if not batch:
+            raise StopIteration()
+        
+        n = (n if n is not None else self.concurrent)
+        if n <= 0:
+            raise MarioException("concurrent requests must be greater than zero")
+        logger.debug("using %d concurrent connections", n)
+        
+        ibatch = iter(batch)
+        total, working = len(batch), 0
+        m = pycurl.CurlMulti()
+        while total > 0:
+            for c in islice(ibatch, (n-working)):
+                if not c: continue
+                m.add_handle(c)
+                working += 1
+            while True:
+                ret, nhandles = m.perform()
+                if ret != pycurl.E_CALL_MULTI_PERFORM:
+                    break
+            while True:
+                q, ok, err = m.info_read()
+                for c in ok:
+                    m.remove_handle(c)
+                    func(c)
+                    #yield (c.args, func(c))
+                for c, errno, errmsg in err:
+                    m.remove_handle(c)
+                    func(c)
+                    #yield (c.args, func(c))
+                read = len(ok) + len(err)
+                total -= read
+                working -= read
+                if q == 0:
+                    break
+            m.select(1.0)
+        
+        while batch:
+            try:
+                batch.pop().close()
+            except:
+                logger.debug('Error: %r'%Traceback())
+
+
+class MarioRss:
+    def __init__(self, callback=None, callpre=None, callfail=None, concount=MAXCONCOUNT, check_duplicate=False):
+        self.concount = concount
+        self.callback = callback
+        self.callpre = callpre
+        self.callfail = callfail
+        self.check_duplicate = check_duplicate
+        self.link_title_db = LinkTitleDB()
+    
+    def get(self, starturl, rssurl=None, rssBody=None, limit=None):
+        if not rssurl: rssurl = self.get_rss_url(starturl)
+        elif not rssurl.startswith('http://feeds.feedburner.com'): 
+            mario = Mario()
+            rssurl = mario.effective_url(rssurl)
+        if not rssurl:
+            logger.debug("Didn't find rss feed for %s"%starturl)
+            return None
+        if not rssBody:
+            mario = Mario()
+            if rssurl.startswith('http://feeds.feedburner.com'): response = mario.get(rssurl, headers=None)
+            else: response = mario.get(rssurl)
+            if not response:
+                logger.debug("Can't fetch rss feed at %s"%rssurl)
+                return None
+            rssBody = response.body
+        rss = feedparser.parse(rssBody)
+        if not rss['entries']: return None
+        if limit: rss['entries'] = rss['entries'][:limit]
+        mario = MarioBatch(callback=self.callback, callpre=self.callpre, callfail=self.callfail, check_duplicate=self.check_duplicate)
+        pool = coros.CoroutinePool(max_size=len(rss['entries']))
+        waiters = []
+        for entry in rss['entries']:
+            #self.add_job(mario, entry)
+            #if self.check_duplicate and URL.been_inserted(URL.normalize(entry['links']), mario.lightcloud): 
+            #    logger.debug('Has been inserted. %r'%entry['link'])
+            #    continue
+            waiters.append(pool.execute(self.add_job, mario, entry))
+        for waiter in waiters:
+            waiter.wait()
+        mario(self.concount)
+        return (rssurl, rssBody)
+    
+    def add_job(self, mario, entry):
+        mario.add_job(entry['link'])
+        self.link_title_db.add(entry['link'], '', entry['title'], entry)
+        return
+        
+    def get_rss_url(self, starturl):
+        mario = Mario()
+        response = mario.get(starturl)
+        if not response: return None
+        return URL.rss_link(starturl, response.body)
+
+
+class MarioDepth:
+    def __init__(self, starturl, callback, callpre=None, callfail=None, concount=MAXCONCOUNT, depth=2, accept_url_patterns=None, reject_url_patterns=None):
+        self.concount = concount
+        self.callback = callback
+        self.callpre = callpre
+        self.callfail = callfail
+        self.depth = depth
+        self.starturl = starturl
+        self.baseurl = URL.baseurl(starturl)
+        self.urls = []
+        self.crawled = {}
+        self.link_title_db = LinkTitleDB()
+        self.accept_url_patterns = accept_url_patterns
+        self.reject_url_patterns = reject_url_patterns
+        self.robotstxt = RobotFileParser()
+        self.robotstxt.set_url(urljoin(starturl, '/robots.txt'))
+        try:
+            self.robotstxt.read()
+        except:
+            logger.debug(Traceback())
+        #self.lightcloud = LightCloud.connect('n0')
+    
+    def __call__(self, n=None):
+        if n: self.concount = n
+        current_depth = self.depth
+        self.urls.append((self.starturl, current_depth))
+        while self.urls:
+            self.depth_get()
+            logger.debug('%d unprocessed urls'%(len(self.urls)))
+    
+    def depth_get(self):
+        mario = MarioBatch(callback=self.next_depth, callpre=self.callpre, callfail=self.callfail)
+        pool = coros.CoroutinePool(max_size=len(self.urls))
+        while self.urls:
+            waiters = []
+            #self.add_job(mario)
+            counter = 0
+            while self.urls:
+                if counter > 9: break;
+                counter += 1
+                waiters.append(pool.execute(self.add_job, mario))
+            logger.debug('Depth break')
+            for waiter in waiters:
+                waiter.wait()
+            mario(self.concount)
+    
+    def add_job(self, mario):
+        if not self.urls: return
+        url, depth = self.urls.pop()
+        if self.visited(url, depth): return
+        mario.add_job(url, args=depth)
+        
+    def visited(self, url, depth):
+        #is_duplicate = URL.is_duplicate(url, self.lightcloud)
+        return depth==0 and is_duplicate or depth < self.depth and self.crawled.has_key(url) and self.crawled[url] == 2
+    
+    def next_depth(self, response):
+        #with_timeout(1, self.lightcloud.set, LightCloud.crawled_url_key(response.effective_url), response.url, timeout_value=None)
+        for link, title in URL.link_title(response.body, response.effective_url):
+            if not self.inject_url(link, response.args):continue
+            self.link_title_db.add(link, response.effective_url, title)
+        if callable(self.callback): self.callback(response)
+        self.crawled[response.effective_url] = 2
+        if response.effective_url != response.url:
+            self.crawled[response.url] = 2
+    
+    def inject_url(self, url, depth):
+        if not (depth and url and url not in self.crawled): 
+            #logger.debug('IGNORE(%d): %r'%(depth, url))
+            return None
+        if isinstance(url, unicode): url = url.encode('utf-8')
+        if self.reject_url(url): 
+            logger.debug('REJECT: %r' % url)
+            return None
+        try:
+            can_fetch = self.robotstxt.can_fetch(USER_AGENT['safari'], url)
+        except:
+            can_fetch = True
+        if self.baseurl!='http://hi.baidu.com/' and not can_fetch:
+            logger.debug('DISALLOW: %r' % url)
+            return None
+        logger.debug('INJECT(%d): %r' % (depth-1, url))
+        self.crawled[url] = 1
+        self.urls.append((url, depth-1))
+        return True
+    
+    def reject_url(self, url):
+        return self.baseurl != URL.baseurl(url) and (not self.accept_url_patterns or not re.match('|'.join(self.accept_url_patterns), url) or self.reject_url_patterns or re.match('|'.join(self.reject_url_patterns), url))
+        
