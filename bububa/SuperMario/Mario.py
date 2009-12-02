@@ -127,10 +127,12 @@ REFERER = 'http://boketing.com/'
 
 class HTTPResponse(object):
     
-    def __init__(self, url=None, effective_url=None, size=None, code=None, headers=None, body=None, args=None):
+    def __init__(self, url=None, effective_url=None, size=None, code=None, headers=None, body=None, etag=None, last_modified=None, args=None):
         if isinstance(url, unicode): url = url.encode('utf-8')
         if isinstance(effective_url, unicode): effective_url = effective_url.encode('utf-8')
         if isinstance(body, unicode): body = body.encode('utf-8')
+        if isinstance(etag, unicode): etag = etag.encode('utf-8')
+        if isinstance(last_modified, unicode): last_modified = last_modified.encode('utf-8')
         self.url = url
         self.effective_url = effective_url
         self.size = size
@@ -164,7 +166,7 @@ class MarioBase(object):
       @ivar progress: a function callback which takes four arguments: C{download_total}, C{download_done},
                       C{upload_total} and C{upload_done}.
       """
-    def __init__(self, callback=None, callpre=None, callfail=None, timeout=15, user_agent=None, referer = REFERER, secure=True, progress=False, proxy=False, check_duplicate=False, verbose=False, args=None):
+    def __init__(self, callback=None, callpre=None, callfail=None, timeout=15, user_agent=None, referer = REFERER, secure=True, progress=False, proxy=False, etag=None, last_modified=None, check_duplicate=False, verbose=False, args=None):
         self.callback = callback
         self.callpre = callpre
         self.callfail = callfail
@@ -176,7 +178,9 @@ class MarioBase(object):
         self.check_duplicate = check_duplicate
         self.proxy = proxy
         self.proxies = None
-        self.secure = True
+        self.secure = secure
+        self.etag = etag
+        self.last_modified = last_modified
         self.args = args
         #self.lightcloud = LightCloud.connect('n1')
     
@@ -193,6 +197,10 @@ class MarioBase(object):
             header_list = []
             for header_name, header_value in headers.iteritems():
                 header_list.append('%s: %s' % (header_name, header_value))
+            if self.last_modified:
+                header_list.append('%s: %s' % ('If-Modified-Since', self.last_modified))
+            if self.etag:
+                header_list.append('%s: %s' % ('ETag', self.etag))
             if header_list:
                 c.setopt(pycurl.HTTPHEADER, header_list)
         #c.setopt(c.USERAGENT, self.user_agent)
@@ -212,9 +220,9 @@ class MarioBase(object):
         c.setopt(pycurl.TIMEOUT, self.timeout) 
         c.setopt(pycurl.NOSIGNAL, 1)
         c.response = StringIO()
-        #c.header_data = StringIO()
+        c.header_data = StringIO()
         c.setopt(pycurl.WRITEFUNCTION, c.response.write)
-        #c.setopt(pycurl.HEADERFUNCTION, c.header_data.write)
+        c.setopt(pycurl.HEADERFUNCTION, c.header_data.write)
         try:
             c.setopt(pycurl.URL, URL.quote(url))
         except:
@@ -275,6 +283,17 @@ class MarioBase(object):
             chunks = line.split('\t')
             cookies[chunks[-2]] = chunks[-1]
         return cookies
+    
+    def parse_headers(self, header):
+        headers = None
+        for line in head.split('\n'):
+            line = line.rstrip('\r')
+            try:
+                name, value = line.split(': ', 1)
+                headers[name] = value
+            except ValueError:
+                pass
+        return headers
                 
     def random_user_agent(self):
         variants = ("Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 1.1.4322)", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 2.0.50727)", "Mozilla/4.0 (compatible; MSIE 7.0b; Windows NT 5.1)", "Mozilla/4.0 (compatible; MSIE 7.0b; Win32)", "Mozilla/4.0 (compatible; MSIE 7.0b; Windows NT 6.0)", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; SV1; Arcor 5.005; .NET CLR 1.0.3705; .NET CLR 1.1.4322)", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; YPC 3.0.1; .NET CLR 1.1.4322; .NET CLR 2.0.50727)", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0; WOW64; SLCC1; .NET CLR 2.0.50727; .NET CLR 3.0.04506; .NET CLR 3.5.21022)", "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; WOW64; SLCC1; .NET CLR 2.0.50727; .NET CLR 3.0.04506; .NET CLR 3.5.21022)", "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; WOW64; Trident/4.0; SLCC1; .NET CLR 2.0.50727; .NET CLR 3.5.21022; .NET CLR 3.5.30729; .NET CLR 3.0.30618)", "Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.8.1) Gecko/20060601 Firefox/2.0 (Ubuntu-edgy)", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.1) Gecko/20061204 Firefox/2.0.0.1", "Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.2) Gecko/20070220 Firefox/2.0.0.2", "Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.2) Gecko/20070221 SUSE/2.0.0.2-6.1 Firefox/2.0.0.2", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.8.1.9) Gecko/20071025 Firefox/2.0.0.9", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.8.1.17) Gecko/20080829 Firefox/2.0.0.17", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.8.1.19) Gecko/20081201 Firefox/2.0.0.19", "Mozilla/5.0 (X11; U; Linux i686 (x86_64); en-US; rv:1.9a1) Gecko/20061204 GranParadiso/3.0a1", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9) Gecko/2008052906 Firefox/3.0", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9.0.1) Gecko/2008070208 Firefox/3.0.1", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9.0.2) Gecko/2008091620 Firefox/3.0.2", "Mozilla/5.0 (X11; U; Linux x86_64; en; rv:1.9.0.2) Gecko/2008092702 Gentoo Firefox/3.0.2", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3", "Mozilla/5.0 (Windows; U; Windows NT 5.1; en; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3 (.NET CLR 3.5.30729)", "Mozilla/5.0 (Windows; U; Windows NT 6.0; en; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3", "Mozilla/5.0 (Windows; U; Windows NT 5.2; en; rv:1.9.0.5) Gecko/2008120122 Firefox/3.0.5", "Opera/9.0 (Windows NT 5.1; U; en)", "Opera/9.01 (X11; Linux i686; U; en)", "Opera/9.02 (Windows NT 5.1; U; en)", "Opera/9.10 (Windows NT 5.1; U; en)", "Opera/9.23 (Windows NT 5.1; U; en)", "Opera/9.50 (Windows NT 5.1; U; en)", "Opera/9.50 (Windows NT 6.0; U; en)", "Opera/9.60 (Windows NT 5.1; U; en) Presto/2.1.1")
@@ -300,6 +319,11 @@ class MarioBase(object):
             if callable(self.callfail): self.callfail(c.url)
             raise HTTPException(c.errstr(), code)
             return None
+        headers = self.parse_headers(c.header_data)
+        Etag = Last_Modified = None
+        if 'ETag' in headers: ETag == headers['ETag']:
+        if 'Last-Modified' in headers: Last_Modified = headers['Last-Modified']
+                
         #if self.check_duplicate and URL.been_inserted(effective_url, self.lightcloud): return None
         body = c.response.getvalue()
         try:
@@ -320,7 +344,7 @@ class MarioBase(object):
             logger.error('Encoding error: %r'%c.url)
             logger.error(err)
             return None
-        response = HTTPResponse(url=c.url, effective_url=URL.normalize(effective_url), size=size, code=code, body=body, args=c.args)
+        response = HTTPResponse(url=c.url, effective_url=URL.normalize(effective_url), size=size, code=code, body=body, etag = Etag, last_modified = last_modified, args=c.args)
         logger.debug(response)
         try:
             if callable(self.callback): self.callback(response)
@@ -373,10 +397,12 @@ class MarioBase(object):
 
 class Mario(MarioBase):
     
-    def get(self, url, normalize=True, body=None, headers=HEADERS, referer=None, proxy=None):
+    def get(self, url, normalize=True, body=None, headers=HEADERS, referer=None, etag=None, last_modified=None, proxy=None):
         self.url = url
         if referer: self.set_referer(referer)
         if proxy: self.set_proxy(proxy)
+        if etag: self.etag = etag
+        if last_modified: self.last_modified = last_modified
         c = self.connect(url=url, normalize=normalize, body=body, headers=headers)
         return self._perform(c)
     
@@ -543,10 +569,10 @@ class MarioRss:
         self.check_duplicate = check_duplicate
         self.link_title_db = LinkTitleDB()
     
-    def get(self, starturl, rssurl=None, rssBody=None, limit=None, proxy=None):
-        if not rssurl: rssurl = self.get_rss_url(starturl, proxy=proxy)
+    def get(self, starturl, rssurl=None, rssBody=None, etag=None, last_modified=None, limit=None, proxy=None):
+        if not rssurl: rssurl = self.get_rss_url(starturl, etag=etag, last_modified=last_modified, proxy=proxy)
         elif not rssurl.startswith('http://feeds.feedburner.com'): 
-            mario = Mario(proxy=proxy)
+            mario = Mario(etag=etag, last_modified=lastmodified, proxy=proxy)
             rssurl = mario.effective_url(rssurl)
         if not rssurl:
             logger.debug("Didn't find rss feed for %s"%starturl)
@@ -581,8 +607,8 @@ class MarioRss:
         self.link_title_db.add(entry['link'], '', entry['title'], entry)
         return
         
-    def get_rss_url(self, starturl, proxy=None):
-        mario = Mario(referer=starturl, proxy=proxy)
+    def get_rss_url(self, starturl, etag=None, last_modified=None, proxy=None):
+        mario = Mario(referer=starturl, etag=etag, last_modified=last_modified, proxy=proxy)
         response = mario.get(starturl)
         if not response: return None
         return URL.rss_link(starturl, response.body)
