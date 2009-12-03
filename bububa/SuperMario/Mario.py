@@ -321,7 +321,7 @@ class MarioBase(object):
             return None
         headers = self.parse_headers(c.header_data)
         Etag = Last_Modified = None
-        if 'ETag' in headers: ETag == headers['ETag']:
+        if 'ETag' in headers: ETag = headers['ETag']
         if 'Last-Modified' in headers: Last_Modified = headers['Last-Modified']
                 
         #if self.check_duplicate and URL.been_inserted(effective_url, self.lightcloud): return None
