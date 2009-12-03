@@ -536,12 +536,12 @@ def MixedRssParser(identifier, debug=False):
 
 class FullRssParser:
     
-    def __init__(self, url, callback=None, check_baseurl=2, debug=False):
+    def __init__(self, url, etag=None, last_modified=None, proxy=None, callback=None, check_baseurl=2, debug=False):
         self.baseurl = None
         self.mario = MarioRss(callback=self.rss_parser)
         self.callback = callback
         self.check_baseurl = check_baseurl
-        self.mario.get(starturl=None, rssurl=url)
+        self.mario.get(starturl=None, rssurl=url, etag=etag, last_modified=last_modified, proxy=proxy)
         self.debug = debug
     
     def rss_parser(self, response):
