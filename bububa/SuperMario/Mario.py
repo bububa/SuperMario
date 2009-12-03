@@ -577,6 +577,7 @@ class MarioRss:
         if not rssurl:
             logger.debug("Didn't find rss feed for %s"%starturl)
             return None
+        rssEtag = rssLastModified = None
         if not rssBody:
             mario = Mario()
             if rssurl.startswith('http://feeds.feedburner.com'): response = mario.get(rssurl, headers=None)
@@ -585,6 +586,8 @@ class MarioRss:
                 logger.debug("Can't fetch rss feed at %s"%rssurl)
                 return None
             rssBody = response.body
+            rssEtag = response.etag
+            rssLastModified = response.last_modified
         rss = feedparser.parse(rssBody)
         if not rss['entries']: return None
         if limit: rss['entries'] = rss['entries'][:limit]
@@ -600,7 +603,7 @@ class MarioRss:
         for waiter in waiters:
             waiter.wait()
         mario(self.concount)
-        return (rssurl, rssBody)
+        return {'url': rssurl, 'effective_url': rssurl, 'body': rssBody, 'code':'200', 'size':len(rssBody), 'etag':rssEtag, 'last_modified':rssLastModified}
     
     def add_job(self, mario, entry):
         mario.add_job(entry['link'])

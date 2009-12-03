@@ -541,7 +541,7 @@ class FullRssParser:
         self.mario = MarioRss(callback=self.rss_parser)
         self.callback = callback
         self.check_baseurl = check_baseurl
-        self.mario.get(starturl=None, rssurl=url, etag=etag, last_modified=last_modified, proxy=proxy)
+        self.rss_response = self.mario.get(starturl=None, rssurl=url, etag=etag, last_modified=last_modified, proxy=proxy)
         self.debug = debug
     
     def rss_parser(self, response):
@@ -589,7 +589,7 @@ class FullRssParser:
                 self.baseurl = None
             if feed.has_key('updated_parsed'): updated_parsed = feed['updated_parsed']
             else: updated_parsed = None
-            self.callback({'url':url, 'title':striptags(feed['title']), 'content':content, 'updated_parsed':updated_parsed, 'author':author, 'baseurl':self.baseurl})
+            self.callback({'url':url, 'title':striptags(feed['title']), 'content':content, 'updated_parsed':updated_parsed, 'author':author, 'baseurl':self.baseurl, 'etag':response.etag, 'last_modified':response.last_modified})
         
     def matched_feed(self, response):
         links = self.mario.link_title_db.dic
