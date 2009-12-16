@@ -21,8 +21,11 @@ except:
     import pickle
 from BeautifulSoup import BeautifulSoup
 import feedparser
-from mongokit import *
-from MongoDB import Site, Page, PageVersion, PageSandbox, Image
+try:
+    from mongokit import *
+    from MongoDB import Site, Page, PageVersion, PageSandbox, Image
+except:
+    pass
 from eventlet import db_pool
 from eventlet.db_pool import ConnectTimeout
 from MySQLdb.cursors import DictCursor
@@ -31,6 +34,7 @@ from bububa.SuperMario.utils import URL, Traceback
 from bububa.SuperMario.Storage import DatabaseConnector, ConnectionPool
 from bububa.SuperMario.bsp import BSP
 from bububa.SuperMario.CoreImage import CoreImage
+from bububa.Lego.Helpers import ThreadPool
 
 logger = logging.getLogger("warehouse")
 handler = logging.StreamHandler()
@@ -278,4 +282,90 @@ class WarehouseImage:
             return
         for entry in rss['entries']:
             self.urls.append( (URL.normalize(entry.guid), entry.title) )
-            
+
+
+class WarehouseProxy:
+    def __init__(self, filename):
+        self.concount = 10
+        self.proxies = []
+        self.filename = filename
+        self.urls = ('http://www.atomintersoft.com/products/alive-proxy/proxy-list', 'http://www.atomintersoft.com/proxy_list_China_cn', 'http://www.1flat.com/proxy_list.js')
+    
+    def get_proxies(self, urls=None):
+        if not urls: urls = self.urls
+        mario = MarioBatch(callback=self.extract_proxies)
+        for url in urls:
+            mario.add_job(url)
+        mario(self.concount)
+        mario = MarioBatch(callback=self.extract_proxies)
+        
+        self.save_proxies(self.proxies)
+    
+    def extract_proxies(self, response):
+        if not response or not response.body: return
+        if '1flat.com' in response.url:
+            pattern = re.compile("['(.*?)',.*?, .*?, (\d+),'.*?']")
+            res = pattern.findall(response.body)
+            if not res:return
+            self.proxies.extend('%s:%d'(r[0], r[1])for r in res if r)
+            return
+        pattern = re.compile('((\d{1,3}\.){3}\d{1,3}:\d{2,5})')
+        res = pattern.findall(response.body)
+        if not res: return
+        self.proxies.extend([r[0] for r in res if r])
+    
+    def save_proxies(self, proxies, truncate=False):
+        if not proxies: return
+        if not truncate:
+            try:
+                fp = file(self.filename, 'r')
+                proxies.extend([line.strip() for line in fp.readlines() if line.strip() and line.strip() not in proxies])
+                fp.close()
+            except IOError:
+                pass
+        self.proxies = []
+        max_chunk = 10
+        total_workers = len(proxies)
+        for i in xrange(0, total_workers, max_chunk):
+            self.run_workers(proxies[i:i + max_chunk])
+        if not self.proxies: return
+        fp = file(self.filename, 'w')
+        fp.writelines(['%s\n'%p for p in self.proxies])
+        fp.close()
+    
+    def run_workers(self, proxies):
+        threadPool = ThreadPool(len(proxies))
+        for proxy in proxies:
+            threadPool.run(self.accept_proxy, callback=None, proxy=proxy)
+        threadPool.killAllWorkers(None)
+        
+    def accept_proxy(self, proxy):
+        if self.check_proxy(proxy):
+            self.proxies.append(proxy)
+        
+    def read_proxies(self):
+        try:
+            fp = file(self.filename, 'r')
+            proxies = [line.strip() for line in fp.readlines() if line.strip()]
+            fp.close()
+        except IOError:
+            return None
+        return proxies
+    
+    def check_proxy(self, proxy):
+        if not proxy: return None
+        url = 'www.baidu.com'
+        mario = Mario()
+        logger.debug('proxy: %s'%proxy)
+        res = mario.get(url=url, proxy={'url': proxy})
+        return res
+        
+    def check_proxies(self, proxies=None):
+        if not proxies: proxies = self.read_proxies()
+        if not proxies: return None
+        ok_proxies = []
+        for proxy in proxies:
+            res = self.check_proxy(proxy)
+            if res: ok_proxies.append(proxy)
+        self.save_proxies(self, ok_proxies, True)
+        
