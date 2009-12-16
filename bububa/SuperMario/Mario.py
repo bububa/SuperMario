@@ -13,6 +13,7 @@ from itertools import islice
 import pycurl
 import chardet
 import feedparser
+import random
 from urlparse import urljoin
 from urllib import quote
 from robotparser import RobotFileParser
@@ -262,7 +263,7 @@ class MarioBase(object):
                 ptype = getattr(pycurl, 'PROXYTYPE_%s' % self.proxy['type'].upper())
                 c.setopt(pycurl.PROXYTYPE, ptype)
         
-        if self.secure:
+        if not self.secure:
             c.setopt(pycurl.SSL_VERIFYPEER, False)
             c.setopt(pycurl.SSL_VERIFYHOST, False) 
         logger.debug('connected to %r'%url)
@@ -285,14 +286,14 @@ class MarioBase(object):
         return cookies
     
     def parse_headers(self, header):
-        headers = None
-        for line in head.split('\n'):
+        headers = {}
+        for line in header.split('\n'):
             line = line.rstrip('\r')
             try:
                 name, value = line.split(': ', 1)
                 headers[name] = value
-            except ValueError:
-                pass
+            except ValueError, err:
+                continue
         return headers
                 
     def random_user_agent(self):
@@ -319,7 +320,7 @@ class MarioBase(object):
             if callable(self.callfail): self.callfail(c.url)
             raise HTTPException(c.errstr(), code)
             return None
-        headers = self.parse_headers(c.header_data)
+        headers = self.parse_headers(c.header_data.getvalue())
         Etag = Last_Modified = None
         if 'ETag' in headers: ETag = headers['ETag']
         if 'Last-Modified' in headers: Last_Modified = headers['Last-Modified']
@@ -344,7 +345,7 @@ class MarioBase(object):
             logger.error('Encoding error: %r'%c.url)
             logger.error(err)
             return None
-        response = HTTPResponse(url=c.url, effective_url=URL.normalize(effective_url), size=size, code=code, body=body, etag = Etag, last_modified = last_modified, args=c.args)
+        response = HTTPResponse(url=c.url, effective_url=URL.normalize(effective_url), size=size, code=code, body=body, etag = Etag, last_modified = Last_Modified, args=c.args)
         logger.debug(response)
         try:
             if callable(self.callback): self.callback(response)
