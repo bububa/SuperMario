@@ -29,12 +29,11 @@ except:
 from eventlet import db_pool
 from eventlet.db_pool import ConnectTimeout
 from MySQLdb.cursors import DictCursor
-from bububa.SuperMario.Mario import Mario, MarioDepth, MarioRss, MarioBatch
-from bububa.SuperMario.utils import URL, Traceback
+from bububa.SuperMario.Mario import Mario, MarioDepth, MarioRss, MarioBatch, MarioThread
+from bububa.SuperMario.utils import URL, Traceback, ThreadPool
 from bububa.SuperMario.Storage import DatabaseConnector, ConnectionPool
 from bububa.SuperMario.bsp import BSP
 from bububa.SuperMario.CoreImage import CoreImage
-from bububa.Lego.Helpers import ThreadPool
 
 logger = logging.getLogger("warehouse")
 handler = logging.StreamHandler()
@@ -185,7 +184,7 @@ class WarehouseRss(WarehouseBase):
         super(WarehouseRss, self).__init__(starturl, identifier=identifier, verbose=verbose)
     
     def run(self, rssurl=None, rssbody=None, concount=CONCOUNT):
-        mario = MarioRss(callback=self.callback, callpre=self.callpre, callfail=self.callfail, check_duplicate=True, concount=concount)
+        mario = MarioRss(callback=self.callback, callpre=self.callpre, callfail=self.callfail, check_duplicate=True, concount=concount, multithread=True)
         rss = mario.get(self.starturl, rssurl, rssbody)
         self.dump(mario, rss)
 
@@ -289,31 +288,45 @@ class WarehouseProxy:
         self.concount = 10
         self.proxies = []
         self.filename = filename
-        self.urls = ('http://www.atomintersoft.com/products/alive-proxy/proxy-list', 'http://www.atomintersoft.com/proxy_list_China_cn', 'http://www.1flat.com/proxy_list.js')
-    
+        self.urls = ('http://www.atomintersoft.com/products/alive-proxy/proxy-list', 'http://www.atomintersoft.com/proxy_list_China_cn', 'http://www.1flat.com/proxy_list.js', 'http://www.chinapromoter.com/proxy/index.htm', 'http://www.cnproxy.com/proxy1.html', 'http://www.cnproxy.com/proxy2.html', 'http://www.cnproxy.com/proxy3.html', 'http://www.cnproxy.com/proxy4.html', 'http://www.cnproxy.com/proxy5.html', 'http://www.cnproxy.com/proxy6.html', 'http://www.66dl.com/ssgx.html')
+
     def get_proxies(self, urls=None):
         if not urls: urls = self.urls
-        mario = MarioBatch(callback=self.extract_proxies)
+        mario = MarioThread(callback=self.extract_proxies)
         for url in urls:
             mario.add_job(url)
         mario(self.concount)
-        mario = MarioBatch(callback=self.extract_proxies)
-        
         self.save_proxies(self.proxies)
-    
+
     def extract_proxies(self, response):
         if not response or not response.body: return
         if '1flat.com' in response.url:
-            pattern = re.compile("['(.*?)',.*?, .*?, (\d+),'.*?']")
+            pattern = re.compile("\['(.*?)',.*?, .*?, (\d+),'.*?'\]")
             res = pattern.findall(response.body)
             if not res:return
-            self.proxies.extend('%s:%d'(r[0], r[1])for r in res if r)
-            return
-        pattern = re.compile('((\d{1,3}\.){3}\d{1,3}:\d{2,5})')
-        res = pattern.findall(response.body)
-        if not res: return
-        self.proxies.extend([r[0] for r in res if r])
-    
+            self.proxies.extend('%s:%s'%(r[0], r[1]) for r in res if r)
+        elif 'cnproxy.com' in response.url:
+            pattern = re.compile('<td>(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*?<SCRIPT type=text/javascript>document.write\(":"(.*?)\)</SCRIPT></td>')
+            res = pattern.findall(response.body)
+            if not res: return
+            rep = {'\+':'', 'z':"3",'m':"4",'k':"2",'l':"9",'d':"0",'x':"5",'i':"7",'w':"6",'q':"8",'b':"1"}
+            for r in res:
+                port = r[1]
+                if not r or len(r)!=2: continue
+                for k, v in rep.items():
+                    port = re.sub(k, v, port)
+                self.proxies.append('%s:%s'%(r[0], port))
+        elif 'chinapromoter.com' in response.url:
+            pattern = re.compile('<TD.*?>(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*?</TD>\s*?<TD>(\d{2,5})\s*?</TD>')
+            res = pattern.findall(response.body)
+            if not res:return
+            self.proxies.extend('%s:%s'%(r[0], r[1]) for r in res if r)
+        else:
+            pattern = re.compile('((\d{1,3}\.){3}\d{1,3}:\d{2,5})')
+            res = pattern.findall(response.body)
+            if not res: return
+            self.proxies.extend([r[0] for r in res if r])
+
     def save_proxies(self, proxies, truncate=False):
         if not proxies: return
         if not truncate:
@@ -324,7 +337,7 @@ class WarehouseProxy:
             except IOError:
                 pass
         self.proxies = []
-        max_chunk = 10
+        max_chunk = 30
         total_workers = len(proxies)
         for i in xrange(0, total_workers, max_chunk):
             self.run_workers(proxies[i:i + max_chunk])
@@ -332,17 +345,17 @@ class WarehouseProxy:
         fp = file(self.filename, 'w')
         fp.writelines(['%s\n'%p for p in self.proxies])
         fp.close()
-    
+
     def run_workers(self, proxies):
         threadPool = ThreadPool(len(proxies))
         for proxy in proxies:
             threadPool.run(self.accept_proxy, callback=None, proxy=proxy)
         threadPool.killAllWorkers(None)
-        
+
     def accept_proxy(self, proxy):
         if self.check_proxy(proxy):
             self.proxies.append(proxy)
-        
+
     def read_proxies(self):
         try:
             fp = file(self.filename, 'r')
@@ -351,21 +364,16 @@ class WarehouseProxy:
         except IOError:
             return None
         return proxies
-    
+
     def check_proxy(self, proxy):
         if not proxy: return None
-        url = 'www.baidu.com'
+        url = 'http://www.baidu.com'
         mario = Mario()
         logger.debug('proxy: %s'%proxy)
         res = mario.get(url=url, proxy={'url': proxy})
         return res
-        
+
     def check_proxies(self, proxies=None):
         if not proxies: proxies = self.read_proxies()
         if not proxies: return None
-        ok_proxies = []
-        for proxy in proxies:
-            res = self.check_proxy(proxy)
-            if res: ok_proxies.append(proxy)
-        self.save_proxies(self, ok_proxies, True)
-        
+        self.save_proxies(proxies, True)
