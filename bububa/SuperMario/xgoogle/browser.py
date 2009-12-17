@@ -78,10 +78,15 @@ class Browser(object):
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-us,en;q=0.5'
         }
+        self.proxies = None
         self.debug = debug
 
     def get_page(self, url, data=None):
-        handlers = [PoolHTTPHandler]
+        if self.proxies:
+            proxy = random.choice(self.proxies)
+            handlers = [PoolHTTPHandler, urllib2.ProxyHandler({'http':proxy})]
+        else:
+            handlers = [PoolHTTPHandler]
         opener = urllib2.build_opener(*handlers)
         if data: data = urllib.urlencode(data)
         request = urllib2.Request(url, data, self.headers)
@@ -102,4 +107,8 @@ class Browser(object):
     def set_random_user_agent(self):
         self.headers['User-Agent'] = random.choice(BROWSERS)
         return self.headers['User-Agent']
+    
+    def set_proxies(self, proxies):
+        self.proxies = proxies
+        return self.proxies
 
