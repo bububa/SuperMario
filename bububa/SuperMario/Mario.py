@@ -19,8 +19,7 @@ from urllib import quote
 from robotparser import RobotFileParser
 from eventlet.api import with_timeout
 from eventlet import coros
-from bububa.SuperMario.utils import Traceback
-from bububa.SuperMario.utils import URL
+from bububa.SuperMario.utils import Traceback, URL, ThreadPool
 #from bububa.SuperMario.Storage import LightCloud
 
 try: 
@@ -561,13 +560,38 @@ class MarioBatch(MarioBase):
                 logger.debug('Error: %r'%Traceback())
 
 
+class MarioThread:
+    def __init__(self, callback=None):
+        self.urls = []
+        self.callback = callback
+    
+    def __call__(self, concurrent=None):
+        total_workers = len(self.urls)
+        for i in xrange(0, total_workers, concurrent):
+            self.run_workers(self.urls[i:i + concurrent])
+    
+    def add_job(self, url):
+        self.urls.append(url)
+        
+    def run_workers(self, urls):
+        threadPool = ThreadPool(len(urls))
+        for url in urls:
+            threadPool.run(self.run_mario, callback=self.callback, url=url)
+        threadPool.killAllWorkers(None)
+    
+    def run_mario(self, url):
+        mario = Mario()
+        return mario.get(url)
+
+
 class MarioRss:
-    def __init__(self, callback=None, callpre=None, callfail=None, concount=MAXCONCOUNT, check_duplicate=False):
+    def __init__(self, callback=None, callpre=None, callfail=None, concount=MAXCONCOUNT, check_duplicate=False, mutilthread=False):
         self.concount = concount
         self.callback = callback
         self.callpre = callpre
         self.callfail = callfail
         self.check_duplicate = check_duplicate
+        self.mutilthread = mutilthread
         self.link_title_db = LinkTitleDB()
     
     def get(self, starturl, rssurl=None, rssBody=None, etag=None, last_modified=None, limit=None, proxy=None):
@@ -592,18 +616,27 @@ class MarioRss:
         rss = feedparser.parse(rssBody)
         if not rss['entries']: return None
         if limit: rss['entries'] = rss['entries'][:limit]
-        mario = MarioBatch(callback=self.callback, callpre=self.callpre, callfail=self.callfail, check_duplicate=self.check_duplicate, referer=rssurl, proxy=proxy)
-        pool = coros.CoroutinePool(max_size=len(rss['entries']))
-        waiters = []
-        for entry in rss['entries']:
-            #self.add_job(mario, entry)
-            #if self.check_duplicate and URL.been_inserted(URL.normalize(entry['links']), mario.lightcloud): 
-            #    logger.debug('Has been inserted. %r'%entry['link'])
-            #    continue
-            waiters.append(pool.execute(self.add_job, mario, entry))
-        for waiter in waiters:
-            waiter.wait()
-        mario(self.concount)
+        if not self.callback:
+            return {'url': rssurl, 'effective_url': rssurl, 'body': rssBody, 'code':'200', 'size':len(rssBody), 'etag':rssEtag, 'last_modified':rssLastModified}
+        if self.multithread:
+            mario = MarioThread(self.callback)
+            for entry in rss['entries']:
+                mario.add_job(entry['link'])
+                self.link_title_db.add(entry['link'], '', entry['title'], entry)
+            mario(self.concount)
+        else:
+            mario = MarioBatch(callback=self.callback, callpre=self.callpre, callfail=self.callfail, check_duplicate=self.check_duplicate, referer=rssurl, proxy=proxy)
+            pool = coros.CoroutinePool(max_size=len(rss['entries']))
+            waiters = []
+            for entry in rss['entries']:
+                #self.add_job(mario, entry)
+                #if self.check_duplicate and URL.been_inserted(URL.normalize(entry['links']), mario.lightcloud): 
+                #    logger.debug('Has been inserted. %r'%entry['link'])
+                #    continue
+                waiters.append(pool.execute(self.add_job, mario, entry))
+            for waiter in waiters:
+                waiter.wait()
+            mario(self.concount)
         return {'url': rssurl, 'effective_url': rssurl, 'body': rssBody, 'code':'200', 'size':len(rssBody), 'etag':rssEtag, 'last_modified':rssLastModified}
     
     def add_job(self, mario, entry):
