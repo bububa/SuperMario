@@ -54,7 +54,7 @@ class GoogleSearch(object):
     SEARCH_URL_1 = "http://www.google.com/search?hl=en&q=%(query)s&num=%(num)d&btnG=Google+Search"
     NEXT_PAGE_1 = "http://www.google.com/search?hl=en&q=%(query)s&num=%(num)d&start=%(start)d"
 
-    def __init__(self, query, random_agent=False, debug=False):
+    def __init__(self, query, random_agent=False, proxies=False, debug=False):
         self.query = query
         self.debug = debug
         self.browser = Browser(debug=debug)
@@ -66,6 +66,8 @@ class GoogleSearch(object):
 
         if random_agent:
             self.browser.set_random_user_agent()
+        if proxies:
+            self.browser.set_proxies(proxies)
 
     @property
     def num_results(self):
