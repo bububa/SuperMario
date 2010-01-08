@@ -164,7 +164,7 @@ class URL:
             else:
                 return ''
         try:
-            soup = BeautifulSoup(data)
+            soup = BeautifulSoup(data, fromEncoding='utf-8')
             return ((URL.normalize(urljoin(url, a['href'])), bcheck(a, 'title')) for a in iter(soup.findAll('a')) if a.has_key('href') and a['href'] and not re.match('^javascript:|^mailto:|^telnet:|^feed:', a['href']))
         except:
             return []
@@ -172,7 +172,7 @@ class URL:
     @staticmethod
     def rss_link(url, soup):
         if isinstance(soup, (str,unicode)):
-            soup = BeautifulSoup(soup)
+            soup = BeautifulSoup(soup, fromEncoding='utf-8')
         if not soup or not soup.head: return None
         tag = soup.head.find(name=['link'], attrs={'type':'application/rss+xml', 'rel':'alternate'})
         if not tag:

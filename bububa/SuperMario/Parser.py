@@ -467,7 +467,7 @@ class PageFeeder:
         effective_url = page.url
         data = version.raw
         try:
-            tree = BeautifulSoup(data)
+            tree = BeautifulSoup(data, fromEncoding='utf-8')
         except:
             return
         n = self.parser.add_tree(name, tree, data, url, effective_url)
@@ -548,7 +548,7 @@ class FullRssParser:
     def rss_parser(self, response):
         if not response or not response.body: return None
         try:
-            tree = BeautifulSoup(response.body)
+            tree = BeautifulSoup(response.body, fromEncoding='utf-8')
         except Exception, err:
             return None
         feed = self.matched_feed(response)

@@ -340,7 +340,7 @@ class PageFeeder:
         effective_url = page.url
         data = version.raw
         try:
-            tree = BeautifulSoup(data)
+            tree = BeautifulSoup(data, fromEncoding='utf-8')
         except:
             logger.error(Traceback())
             return

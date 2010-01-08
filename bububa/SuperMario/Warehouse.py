@@ -19,7 +19,6 @@ try:
     import cPickle as pickle
 except:
     import pickle
-from BeautifulSoup import BeautifulSoup
 import feedparser
 try:
     from mongokit import *

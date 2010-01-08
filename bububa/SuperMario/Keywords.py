@@ -39,7 +39,7 @@ class GoogleSuggestKeywords:
             if self.debug:
                 print >>stderr, "can't find!"
             return []
-        soup = BeautifulSoup(wrapper[0])
+        soup = BeautifulSoup(wrapper[0], fromEncoding='utf-8')
         return [''.join(a.findAll(text=True)) for a in soup.findAll('a')]
 
 class GoogleCNSuggestKeywords:
@@ -64,7 +64,7 @@ class GoogleCNSuggestKeywords:
             if self.debug:
                 print >>stderr, "can't find!"
             return []
-        soup = BeautifulSoup(wrapper[0])
+        soup = BeautifulSoup(wrapper[0], fromEncoding='utf-8')
         return [''.join(a.findAll(text=True)) for a in soup.findAll('a')]
         
 
@@ -90,7 +90,7 @@ class GoogleJpSuggestKeywords:
             if self.debug:
                 print >>stderr, "can't find!"
             return []
-        soup = BeautifulSoup(wrapper[0])
+        soup = BeautifulSoup(wrapper[0], fromEncoding='utf-8')
         return [''.join(a.findAll(text=True)) for a in soup.findAll('a')]
 
 class BaiduSuggestKeywords:
@@ -116,7 +116,7 @@ class BaiduSuggestKeywords:
             if self.debug:
                 print >>stderr, "can't find!"
             return []
-        soup = BeautifulSoup(wrapper[0])
+        soup = BeautifulSoup(wrapper[0], fromEncoding='utf-8')
         return [''.join(a.findAll(text=True)) for a in soup.findAll('a')]
 
 
@@ -174,7 +174,7 @@ class BingSuggestKeywords:
             if self.debug:
                 print >>stderr, "can't find!"
             return []
-        soup = BeautifulSoup(wrapper[0])
+        soup = BeautifulSoup(wrapper[0], fromEncoding='utf-8')
         return [''.join(a.findAll(text=True)) for a in soup.findAll('a')]
 
     
