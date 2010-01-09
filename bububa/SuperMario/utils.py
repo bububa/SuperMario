@@ -127,14 +127,15 @@ class URL:
         #    charset = chardet.detect(unquote_path)
         #else:
         charset = chardet.detect(path)
-        if charset and charset['encoding']: 
+        if charset and charset['encoding'] and charset['encoding'].lower()!='utf-8' and charset['encoding'].lower()!='iso-8859-2': 
             charset['encoding'] = charset['encoding'].lower()
             if charset['encoding'] in ALT_CODECS: charset['encoding'] = ALT_CODECS[charset['encoding']]
-            path = path.decode(charset['encoding'])
+            path = path.decode(charset['encoding']).encode('utf-8')
         return path
 
     @staticmethod
     def normalize(url, slashend=True):
+        if isinstance(url, unicode): url = url.encode('utf-8')
         try:
             url = urlunparse(URL.norm(urlparse(url), slashend))
             if isinstance(url, unicode): return url.encode('utf-8')
