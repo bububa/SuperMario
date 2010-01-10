@@ -335,7 +335,7 @@ class MarioBase(object):
                 if charset['encoding'] in ALT_CODECS: charset['encoding'] = ALT_CODECS[charset['encoding']]
                 encoding = charset['encoding']
                 body = body.decode(encoding).encode('utf-8')
-            elif charset['encoding'].lower()!='iso-8859-2':
+            elif charset and charset['encoding'] and charset['encoding'].lower()!='iso-8859-2':
                 pattern = re.compile('<meta http-equiv="Content-Type" content="text/html; charset=([^^].*?)"', re.I|re.S)
                 encoding = pattern.findall(body)
                 if encoding:
