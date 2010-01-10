@@ -138,6 +138,8 @@ class HTTPResponse(object):
         self.size = size
         self.code = code
         self.body = body
+        self.etag = etag
+        self.last_modified = last_modified
         self.args = args
     
     def __repr__(self):
@@ -332,13 +334,14 @@ class MarioBase(object):
                 charset['encoding'] = charset['encoding'].lower()
                 if charset['encoding'] in ALT_CODECS: charset['encoding'] = ALT_CODECS[charset['encoding']]
                 body = body.decode(charset['encoding']).encode('utf-8')
-            #else:
-                #pattern = re.compile('<meta http-equiv="Content-Type" content="text/html; charset=([^^].*?)"', re.I|re.S)
-                #encoding = pattern.findall(body)
-                #if encoding:
-                    #encoding = encoding[0].lower()
-                    #if encoding in ALT_CODECS: encoding = ALT_CODECS[encoding]
-                    #body = body.decode(encoding).encode('utf-8')
+            elif charset['encoding'].lower()!='iso-8859-2':
+                pattern = re.compile('<meta http-equiv="Content-Type" content="text/html; charset=([^^].*?)"', re.I|re.S)
+                encoding = pattern.findall(body)
+                if encoding:
+                    encoding = encoding[0].lower()
+                    if encoding in ALT_CODECS: encoding = ALT_CODECS[encoding]
+                    if encoding.lower()!='iso-8859-2' and encoding.lower()!='utf-8':
+                    body = body.decode(encoding).encode('utf-8')
         except UnicodeDecodeError, err:
             if callable(self.callfail): self.callfail(effective_url)
             logger.error('Encoding error: %r'%c.url)
