@@ -333,7 +333,8 @@ class MarioBase(object):
             if charset and charset['encoding'] and charset['encoding'].lower()!='utf-8' and charset['encoding'].lower()!='iso-8859-2':
                 charset['encoding'] = charset['encoding'].lower()
                 if charset['encoding'] in ALT_CODECS: charset['encoding'] = ALT_CODECS[charset['encoding']]
-                body = body.decode(charset['encoding']).encode('utf-8')
+                encoding = charset['encoding']
+                body = body.decode(encoding).encode('utf-8')
             elif charset['encoding'].lower()!='iso-8859-2':
                 pattern = re.compile('<meta http-equiv="Content-Type" content="text/html; charset=([^^].*?)"', re.I|re.S)
                 encoding = pattern.findall(body)
@@ -343,10 +344,11 @@ class MarioBase(object):
                     if encoding.lower()!='iso-8859-2' and encoding.lower()!='utf-8':
                     body = body.decode(encoding).encode('utf-8')
         except UnicodeDecodeError, err:
-            if callable(self.callfail): self.callfail(effective_url)
-            logger.error('Encoding error: %r'%c.url)
-            logger.error(err)
-            return None
+            body = body.decode(encoding, "replace").encode('utf-8')
+            #if callable(self.callfail): self.callfail(effective_url)
+            #logger.error('Encoding error: %r'%c.url)
+            #logger.error(err)
+            #return None
         response = HTTPResponse(url=c.url, effective_url=URL.normalize(effective_url), size=size, code=code, body=body, etag = Etag, last_modified = Last_Modified, args=c.args)
         logger.debug(response)
         try:
