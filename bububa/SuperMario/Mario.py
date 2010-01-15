@@ -257,7 +257,9 @@ class MarioBase(object):
         if self.proxies: self.proxy = random.choice(self.proxies)
         
         if self.proxy:
-            c.setopt(pycurl.PROXY, self.proxy['url'])
+            if isinstance(self.proxy, (str, unicode)): proxy = self.proxy
+            else: proxy = self.proxy['url'] 
+            c.setopt(pycurl.PROXY, proxy)
             if 'userpwd' in self.proxy:
                 c.setopt(pycurl.PROXYUSERPWD, self.proxy['proxy_userpwd'])
             if 'type' in self.proxy:
