@@ -258,13 +258,14 @@ class MarioBase(object):
         
         if self.proxy:
             if isinstance(self.proxy, (str, unicode)): proxy = self.proxy
-            else: proxy = self.proxy['url'] 
+            else: 
+                proxy = self.proxy['url']
+                if 'userpwd' in self.proxy:
+                    c.setopt(pycurl.PROXYUSERPWD, self.proxy['proxy_userpwd'])
+                if 'type' in self.proxy:
+                    ptype = getattr(pycurl, 'PROXYTYPE_%s' % self.proxy['type'].upper())
+                    c.setopt(pycurl.PROXYTYPE, ptype)
             c.setopt(pycurl.PROXY, proxy)
-            if 'userpwd' in self.proxy:
-                c.setopt(pycurl.PROXYUSERPWD, self.proxy['proxy_userpwd'])
-            if 'type' in self.proxy:
-                ptype = getattr(pycurl, 'PROXYTYPE_%s' % self.proxy['type'].upper())
-                c.setopt(pycurl.PROXYTYPE, ptype)
         
         if not self.secure:
             c.setopt(pycurl.SSL_VERIFYPEER, False)
