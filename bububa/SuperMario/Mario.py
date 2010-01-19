@@ -15,7 +15,7 @@ import chardet
 import feedparser
 import random
 from urlparse import urljoin
-from urllib import quote
+from urllib import quote, urlencode, quote_plus
 from robotparser import RobotFileParser
 from eventlet.api import with_timeout
 from eventlet import coros
@@ -180,6 +180,9 @@ class MarioBase(object):
         self.check_duplicate = check_duplicate
         self.proxy = proxy
         self.proxies = None
+        self.cookies = None
+        self.login = None
+        self.post_body = None
         self.secure = secure
         self.etag = etag
         self.last_modified = last_modified
@@ -207,8 +210,11 @@ class MarioBase(object):
                 c.setopt(pycurl.HTTPHEADER, header_list)
         #c.setopt(c.USERAGENT, self.user_agent)
         # Presence of a body indicates that we should do a POST
+        if self.post_body: body = self.post_body
+        if self.login: body = self.login
         if body is not None:
             logger.debug('post')
+            body = urlencode(body)
             c.setopt(pycurl.POST, 1)
             c.setopt(pycurl.POSTFIELDS, body)
         else:
@@ -217,7 +223,7 @@ class MarioBase(object):
         c.args = args
         c.setopt(pycurl.ENCODING, 'gzip, deflate')
         c.setopt(pycurl.FOLLOWLOCATION, 1) 
-        c.setopt(pycurl.MAXREDIRS, 5) 
+        c.setopt(pycurl.MAXREDIRS, 10) 
         c.setopt(pycurl.CONNECTTIMEOUT, 30) 
         c.setopt(pycurl.TIMEOUT, self.timeout) 
         c.setopt(pycurl.NOSIGNAL, 1)
@@ -229,15 +235,16 @@ class MarioBase(object):
             c.setopt(pycurl.URL, URL.quote(url))
         except:
             return None
-        cookies = self.parse_cookies(c)
+        if self.cookies: cookies = self.cookies
+        else: cookies = self.parse_cookies(c)
         if cookies:
             c.setopt(pycurl.COOKIELIST, '')
             chunks = []
             for key, value in cookies.iteritems():
-                key = urllib.quote_plus(key)
-                value = urllib.quote_plus(value)
+                key = quote_plus(key)
+                value = quote_plus(value)
                 chunks.append('%s=%s;' % (key, value))
-                c.setopt(pycurl.COOKIE, ''.join(chunks))
+            c.setopt(pycurl.COOKIE, ''.join(chunks))
         else:
             cookie_file_name = os.tempnam()
             c.setopt(pycurl.COOKIEFILE, cookie_file_name)
@@ -281,6 +288,15 @@ class MarioBase(object):
     
     def set_proxies_list(self, proxies):
         return self.proxies
+    
+    def set_post_body(self, post_body):
+        self.post_body = post_body
+    
+    def set_login(self, params):
+        self.login = params
+    
+    def set_cookies(self, cookies):
+        self.cookies = cookies
         
     def parse_cookies(self, c):
         cookies = {}
@@ -315,6 +331,7 @@ class MarioBase(object):
         @return: a dictionary of results corresponding to the response
         @raise MarioException: if an error exists in the response
         """
+        if self.login: self.cookies = self.parse_cookies(c)
         
         code = c.getinfo(c.HTTP_CODE)
         if c.errstr() == '' and c.getinfo(pycurl.RESPONSE_CODE) in STATUS_OK or code == 200:
@@ -345,7 +362,7 @@ class MarioBase(object):
                     encoding = encoding[0].lower()
                     if encoding in ALT_CODECS: encoding = ALT_CODECS[encoding]
                     if encoding.lower()!='iso-8859-2' and encoding.lower()!='utf-8':
-                    body = body.decode(encoding).encode('utf-8')
+                        body = body.decode(encoding).encode('utf-8')
         except UnicodeDecodeError, err:
             body = body.decode(encoding, "replace").encode('utf-8')
             #if callable(self.callfail): self.callfail(effective_url)
