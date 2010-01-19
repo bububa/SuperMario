@@ -32,7 +32,6 @@ Some other python models:
   + convert all content into unicode;
   + extract MainText from HTML by specific a * link-threshold *
   + convert partial RSS feed to full RSS feed;
-
-== TODO ==
-  + Proxy support;
-  + Cookie support;
+  + proxies list support;
+  + cookie keep support;
+  + login support;
