@@ -26,7 +26,7 @@ from bububa.SuperMario.layout_analyzer import sigchars, get_textblocks, retrieve
 from bububa.SuperMario.utils import URL, Traceback, guess_baseurl, levenshtein, levenshtein_distance, lcs
 from bububa.SuperMario.bsp import BSP
 try:
-    from bububa.SuperMario.MongoDB import *
+    from bububa.SuperMario.MongoDB import New, Page, PageVersion, Site, PageSandbox, AnalyzerCandidate, Entry
 except:
     pass
     
@@ -261,7 +261,7 @@ class LayoutParser:
         if self.pac and isinstance(self.pac, unicode):
             pac = self.pac
         else:
-            site = Site.one({'url_hash':identifier})
+            site = Site().one({'url_hash':identifier})
             if not site or not site.pattern:
                 logger.debug('No pattern for %s'%identifier)
                 return None
@@ -424,9 +424,9 @@ class LayoutParser:
             except:
                 pass
         url_hash = md5(data['url']).hexdigest()
-        entry = Entry.one({'url_hash': url_hash})
+        entry = Entry().one({'url_hash': url_hash})
         if not entry:
-            entry = Entry()
+            entry = New(Entry())
             entry.url = data['url'] if isinstance(data['url'], unicode) else data['url'].decode('utf-8')
             entry.url_hash = url_hash if isinstance(url_hash, unicode) else url_hash.decode('utf-8')
             entry.identifier = identifier if isinstance(identifier, unicode) else identifier.decode('utf-8')
@@ -458,7 +458,7 @@ class PageFeeder:
             logger.error("Can't parse rss. %s"%Traceback())
 
     def feed_page(self, version):
-        page = Page.one({'_id': version.page})
+        page = Page().one({'_id': version.page})
         url = version.url
         try:
             name = md5(url).hexdigest()
@@ -478,9 +478,9 @@ class PageFeeder:
         self.parser.run()
 
 def AddToAnalyzerCandidates(identifier, starturl):
-    ac = AnalyzerCandidate.one({'url_hash':identifier})
+    ac = AnalyzerCandidate().one({'url_hash':identifier})
     if not ac:
-        ac = AnalyzerCandidate()
+        ac = New(AnalyzerCandidate())
         ac.url_hash = identifier if isinstance(identifier, unicode) else identifier.decode('utf-8')
         ac.start_url = starturl if isinstance(starturl, unicode) else starturl.decode('utf-8')
     ac.inserted_at = datetime.utcnow()
@@ -489,7 +489,7 @@ def AddToAnalyzerCandidates(identifier, starturl):
 
 
 def Parser(identifier, pac=None, debug=False):
-    site_info = Site.one({'url_hash':identifier})
+    site_info = Site().one({'url_hash':identifier})
     if not site_info: return
     '''bsp = BSP()
     bsp_pac = bsp.get_pac(site_info.url)
@@ -500,17 +500,17 @@ def Parser(identifier, pac=None, debug=False):
     if not pac:
         logger.error("Can't find pac for site %s"%identifier)
         AddToAnalyzerCandidates(identifier, site_info.url)
-        for box in PageSandbox.all({'analyzer': 0, 'mixed': 0}):
+        for box in PageSandbox().find({'analyzer': 0, 'mixed': 0}):
             box.delete()
             logger.debug('FINISHED BOX: %s'%box._id)
         logger.debug('FINISHED')
         return
     parser = LayoutParser(identifier, pac, debug=debug)
-    for box in PageSandbox.all({'analyzer': 0, 'mixed': 0}):
+    for box in PageSandbox().find({'analyzer': 0, 'mixed': 0}):
         feeder = PageFeeder(parser=parser, debug=debug)
         if box.rss: feeder.feed_rss(box.rss)
         for version in box.page_versions:
-            version = PageVersion.one({'_id':version})
+            version = PageVersion().one({'_id':version})
             if not version: continue
             feeder.feed_page(version)
         feeder.close()
@@ -521,11 +521,11 @@ def Parser(identifier, pac=None, debug=False):
 
 def MixedRssParser(identifier, debug=False):
     parser = LayoutParser(identifier, None, debug=debug)
-    for box in PageSandbox.all({'analyzer': 0, 'mixed': 1}):
+    for box in PageSandbox().find({'analyzer': 0, 'mixed': 1}):
         feeder = PageFeeder(parser=parser, debug=debug)
         if box.rss: feeder.feed_rss(box.rss)
         for version in box.page_versions:
-            version = PageVersion.one({'_id':version})
+            version = PageVersion().one({'_id':version})
             if not version: continue
             feeder.feed_page(version)
         feeder.close()

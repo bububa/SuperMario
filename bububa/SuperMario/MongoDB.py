@@ -9,9 +9,10 @@ Copyright (c) 2009 __ThePeppersStudio__. All rights reserved.
 from datetime import datetime
 from mongokit import *
 
-class Site(MongoDocument):
-    db_name = 'supermario'
-    collection_name = 'sites'
+MongoHost = 'localhost'
+MongoPort = '27017'
+
+class SiteDocument(Document):
     structure = {
         'url': unicode,
         'url_hash': unicode,
@@ -28,9 +29,7 @@ class Site(MongoDocument):
     default_values = {'update_freq':0.0, 'rank':0}
     use_dot_notation=True
 
-class Page(MongoDocument):
-    db_name = 'crawldb'
-    collection_name = 'pages'
+class PageDocument(Document):
     structure = {
         'url': unicode,
         'url_hash': unicode,
@@ -45,9 +44,7 @@ class Page(MongoDocument):
     default_values = {'failed_freq':0.0, 'update_freq':0.0, 'rank':0, 'anchors':[]}
     use_dot_notation=True
 
-class PageVersion(MongoDocument):
-    db_name = 'supermario'
-    collection_name = 'page_versions'
+class PageVersionDocument(Document):
     structure = {
         'crawled_at': datetime,
         'raw': unicode,
@@ -60,9 +57,7 @@ class PageVersion(MongoDocument):
     default_values = {'crawled_at':datetime.utcnow}
     use_dot_notation=True
 
-class PageSandbox(MongoDocument):
-    db_name = 'supermario'
-    collection_name = 'sandbox'
+class PageSandboxDocument(Document):
     structure = {
         'page_versions': [unicode],
         'rss': {'url':unicode, 'body':unicode},
@@ -72,25 +67,21 @@ class PageSandbox(MongoDocument):
         'analyzer': int,
         'mixed': int
     }
-    indexes = [{'fields':['identifier', 'analyzer', 'mixed', 'crawled_at']}, {'fields':['analyzer', 'mixed']}]
+    indexes = [{'fields':[('identifier', INDEX_ASCENDING), ('analyzer', INDEX_ASCENDING), ('mixed', INDEX_ASCENDING), ('crawled_at', INDEX_ASCENDING)]}, {'fields':[('analyzer', INDEX_ASCENDING), ('mixed', INDEX_ASCENDING)]}]
     default_values = {'mixed':0, 'analyzer':0, 'identifier':None, 'starturl':None, 'crawled_at':datetime.utcnow, 'rss':{}}
     use_dot_notation=True
 
-class AnalyzerCandidate(MongoDocument):
-    db_name = 'supermario'
-    collection_name = 'analyzer_candidates'
+class AnalyzerCandidateDocument(Document):
     structure = {
         'url_hash': unicode,
         'start_url': unicode,
         'inserted_at': datetime
     }
-    indexes = [{'fields':['url_hash', 'inserted_at']}]
+    indexes = [{'fields':[('url_hash', INDEX_ASCENDING), ('inserted_at', INDEX_ASCENDING)]}]
     default_values = {'inserted_at':datetime.utcnow}
     use_dot_notation=True
     
-class Entry(MongoDocument):
-    db_name = 'supermario'
-    collection_name = 'entries'
+class EntryDocument(Document):
     structure = {
         'url': unicode, 
         'url_hash': unicode,
@@ -106,9 +97,7 @@ class Entry(MongoDocument):
     default_values = {'published_at':datetime.utcnow, 'updated_at':datetime.utcnow}
     use_dot_notation=True
 
-class Image(MongoDocument):
-    db_name = 'supermario'
-    collection_name = 'images'
+class ImageDocument(Document):
     structure = {
         'url': unicode,
         'meta': unicode,
@@ -119,3 +108,63 @@ class Image(MongoDocument):
     }
     default_values = {'inserted_at': datetime.utcnow}
     use_dot_notation=True
+
+
+def reconnect():
+    try:
+        conn = Connection(MongoHost, MongoPort)
+    except AutoReconnect, err:
+        conn = None
+    return conn
+
+
+def Site(conn=None):
+    if not conn: conn = reconnect()
+    if not conn: return None
+    conn.register([SiteDocument])
+    return conn.supermario.sites.SiteDocument()
+
+
+def Page(conn=None):
+    if not conn: conn = reconnect()
+    if not conn: return None
+    conn.register([PageDocument])
+    return conn.crawldb.pages.PageDocument()
+
+
+def PageVersion(conn=None):
+    if not conn: conn = reconnect()
+    if not conn: return None
+    conn.register([PageVersionDocument])
+    return conn.supermario.pageversions.PageVersionDocument()
+
+
+def PageSandbox(conn=None):
+    if not conn: conn = reconnect()
+    if not conn: return None
+    conn.register([PageSandboxDocument])
+    return conn.supermario.sandbox.PageSandboxDocument()
+
+
+def AnalyzerCandidate(conn=None):
+    if not conn: conn = reconnect()
+    if not conn: return None
+    conn.register([AnalyzerCandidateDocument])
+    return conn.supermario.analyzer_candidates.AnalyzerCandidateDocument()
+
+
+def Entry(conn=None):
+    if not conn: conn = reconnect()
+    if not conn: return None
+    conn.register([EntryDocument])
+    return conn.supermario.entries.EntryDocument()
+
+
+def Image(conn=None):
+    if not conn: conn = reconnect()
+    if not conn: return None
+    conn.register([ImageDocument])
+    return conn.supermario.images.ImageDocument()
+
+def New(obj):
+    return obj()

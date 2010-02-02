@@ -20,7 +20,7 @@ from MySQLdb.cursors import DictCursor
 from bububa.SuperMario.Storage import DatabaseConnector, ConnectionPool
 from bububa.eventlet.db_pool import ConnectTimeout
 from bububa.SuperMario.utils import Traceback
-from bububa.SuperMario.MongoDB import *
+from bububa.SuperMario.MongoDB import Entry
 
 logger = logging.getLogger("Inserter")
 handler = logging.StreamHandler()
@@ -119,7 +119,7 @@ def Inserter(db_pool_conf, db_name, db_table, debug=False):
     '''
     archives = []
     inserter = BaseInserter(db_pool_conf, db_name, db_table, debug)
-    for entry in Entry.all():
+    for entry in Entry().find():
         feeder = PageFeeder(inserter, debug=debug)
         feeder.feed_page(entry)
         feeder.close()

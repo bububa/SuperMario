@@ -4,7 +4,7 @@
 import sys
 import os
 import re
-import md5
+from hashlib import md5
 import logging
 from urllib import urlencode
 from urlparse import urlsplit, urljoin, urlparse, urlunparse
@@ -101,7 +101,7 @@ class BSP:
         bsp_info = self.normalize(url)
         if not bsp_info: return None
         if bsp_info[2] not in self.pac: return None
-        self.pac[bsp_info[2]]['identifier'] = md5.new(bsp_info[1]).hexdigest()
+        self.pac[bsp_info[2]]['identifier'] = md5(bsp_info[1]).hexdigest()
         return self.pac[bsp_info[2]]
     
     def get_entry_pac(self, url):

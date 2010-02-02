@@ -23,7 +23,7 @@ from difflib import SequenceMatcher
 from bububa.SuperMario.layout_analyzer import sigchars, get_textblocks, retrieve_blocks
 from bububa.SuperMario.template import BaseTemplate
 from bububa.SuperMario.utils import Traceback
-from bububa.SuperMario.MongoDB import *
+from bububa.SuperMario.MongoDB import Page, PageVersion, Site, PageSandbox
 
 logger = logging.getLogger("Analyzer")
 handler = logging.StreamHandler()
@@ -244,7 +244,7 @@ class HTMLPage:
         return '<%s>' % self.name
     
     def add_anchor_strs(self):
-        page = Page.one({'url_hash': self.name})
+        page = Page().one({'url_hash': self.name})
         if not page: return
         self.anchor_strs.extend([sigchars(anchor['name']) for anchor in page.anchors if sigchars(anchor['name'])])
         return
@@ -331,7 +331,7 @@ class PageFeeder:
         return True
     
     def feed_page(self, version):
-        page = Page.one({'_id': version.page})
+        page = Page().one({'_id': version.page})
         url = version.url
         try:
             name = md5(url).hexdigest()
@@ -358,7 +358,7 @@ def generate_link_pattern(pages):
     return template.pattern((p.url for p in pages))
 
 def save_analysis_result(identifier, fullpac):
-    site = Site.one({'url_hash': identifier})
+    site = Site().one({'url_hash': identifier})
     if not site: return
     site.pattern = fullpac if isinstance(fullpac, unicode) else fullpac.decode('utf-8')
     site.save()
@@ -366,10 +366,10 @@ def save_analysis_result(identifier, fullpac):
 def Analyzer(identifier, sample_page=None, cluster_threshold=0.74, title_threshold=0.6, score_threshold = 100, max_sample=5, debug=False):
     analyzer = LayoutAnalyzer(sample_page, debug=debug)
     dumpfile = ''
-    for box in PageSandbox.all({'identifier':identifier, 'mixed': 0, 'analyzer': 1}):
+    for box in PageSandbox().find({'identifier':identifier, 'mixed': 0, 'analyzer': 1}):
         feeder = PageFeeder(analyzer, debug=debug)
         for version in box.page_versions:
-            version = PageVersion.one({'_id':version})
+            version = PageVersion().one({'_id':version})
             if not version: continue
             feeder.feed_page(version)
         feeder.close()

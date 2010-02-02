@@ -42,7 +42,23 @@ class GoogleSearch:
     
     def set_proxies(self, proxies):
         self.proxies = proxies
-        
+    
+    def count(self, query=None, domain=None):
+        if not domain: domain = self.domain
+        if not query: query = self.query
+        url = GoogleSearch.SEARCH_URL%{'domain':domain, 'query':query}
+        mario = Mario()
+        mario.set_proxies_list(self.proxies)
+        response = mario.get(url)
+        if not response:
+            raise GoogleException('Fail to open page', 502)
+        patterns = [re.compile('<p id=resultStats>&nbsp;[^^]*?<b>\d+</b> - <b>\d+</b>[^^]*?<b>([^^]*?)</b>'), re.compile('<p id=resultStats>&nbsp;[^^]*?<b>[^^]*?</b>[^^]*?<b>([^^]*?)</b>[^^]*?<b>\d+</b>-<b>\d+</b>')]
+        for pattern in patterns:
+            res = pattern.findall(response.body)
+            if not res: continue
+            return long(re.sub(',', '', res[0]))
+        return 0
+    
     def search(self, query=None, number_of_pages=1, domain=None):
         if not domain: domain = self.domain
         if not query: query = self.query
@@ -72,7 +88,7 @@ class GoogleSearch:
         return [GoogleResult('http://%s'%result['url'], result['unescape_url'], result['title'], result['description'], page*self.number_of_results+i+1) for i, result in enumerate(results)]
     
     def _parse_response(self, page):
-        pattern = re.compile('<!--m-->([^^]*?)<!--n-->', re.S)
+        pattern = re.compile('<!--m--><li([^^]*?)<!--n-->', re.S)
         wrappers = pattern.findall(page)
         if not wrappers: return None
         patterns = {'unescape_url':'<h3 class=r><a href="([^^]*?)"[^^]*?</h3>', 'title':'<h3 class=r><a[^^]*?>([^^]*?)</a></h3>', 'description':'<div class="s">([^^]*?)。<br>', 'url':'<cite>([^^]*?) - </cite>'}
@@ -89,7 +105,7 @@ class GoogleSearch:
     
 
 class GoogleAnalytics:
-    
+    MAX_RESULTS = 50000
     def __init__(self, email, password, account_id=None):
         self.email = email
         self.password = password
@@ -102,6 +118,7 @@ class GoogleAnalytics:
     def set_account(self, account_id):
         self.account = None
         if account_id:
+            if isinstance(account_id, (int, long)): account_id = str(account_id)
             self.account = self.connection.get_account(account_id)
     
     def accounts(self):
@@ -112,7 +129,7 @@ class GoogleAnalytics:
         if isinstance(start_date, (str, unicode)): start_date = dateParse(start_date)
         if isinstance(end_date, (str, unicode)): end_date = dateParse(end_date)
         if isinstance(filters, (str, unicode)): filters = eval(filters)
-        data = self.account.get_data(start_date, end_date, metrics=['visits',], dimensions=['pagePath', ], filters=filters)
+        data = self.account.get_data(start_date, end_date, metrics=['visits',], dimensions=['pagePath', ], filters=filters, sort=['-visits',], max_results=GoogleAnalytics.MAX_RESULTS)
         return data
     
     def keyword_traffics(self, filters, start_date, end_date):
@@ -120,7 +137,7 @@ class GoogleAnalytics:
         if isinstance(start_date, (str, unicode)): start_date = dateParse(start_date)
         if isinstance(end_date, (str, unicode)): end_date = dateParse(end_date)
         if isinstance(filters, (str, unicode)): filters = eval(filters)
-        data = self.account.get_data(start_date, end_date, metrics=['visits',], dimensions=['keyword', ], filters=filters)
+        data = self.account.get_data(start_date, end_date, metrics=['visits',], dimensions=['keyword', ], filters=filters, sort=['-visits',], max_results=GoogleAnalytics.MAX_RESULTS)
         return data
     
 

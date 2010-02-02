@@ -56,16 +56,16 @@ class WarehouseBase(object):
         self.results = []
     
     def check_duplicate_sandbox(self, url):
-        sandboxes = PageSandbox.all()
+        sandboxes = PageSandbox().find()
         for sandbox in sandboxes:
             for version in sandbox.page_versions:
-                page_version = PageVersion.one({'_id':version})
+                page_version = PageVersion().one({'_id':version})
                 if page_version.url == url:
                     return True
         return None
         
     def dump(self, mario, rss=None):
-        page_sandbox = PageSandbox()
+        page_sandbox = New(PageSandbox())
         if self.analysis: page_sandbox.analyzer = 1
         if self.mixed: page_sandbox.mixed = 1
         page_sandbox.identifier = self.identifier if isinstance(self.identifier, unicode) else self.identifier.decode('utf-8')
@@ -75,9 +75,9 @@ class WarehouseBase(object):
             if not self.analysis and self.check_duplicate_sandbox(r.url if isinstance(r.url, unicode) else r.url.decode('utf-8')):
                 logger.debug("Existed in sandbox: %s"%(r.url))
                 continue
-            page = Page.one({'url_hash':url_hash})
+            page = Page().one({'url_hash':url_hash})
             if not page:
-                page = Page()
+                page = New(Page())
                 page.effective_url = r.effective_url if isinstance(r.effective_url, unicode) else r.effective_url.decode('utf-8')
                 page.url_hash = url_hash if isinstance(url_hash, unicode) else url_hash.decode('utf-8')
             for links in (links for url, links in mario.link_title_db.dic.items() if url == r.effective_url):
@@ -86,13 +86,13 @@ class WarehouseBase(object):
                     if lt not in page.anchors:
                         page.anchors.append(lt)
             page.save()
-            page_versions = PageVersion.all({'page':page._id}).limit(1)
+            page_versions = PageVersion().find({'page':page._id}).limit(1)
             if page_versions.count() > 0:
                 for page_version in page_versions:
                     page_sandbox.page_versions.append(page_version._id)
                     break
             if not page_versions:
-                page_version = PageVersion()
+                page_version = New(PageVersion())
                 page_version.page= page._id
                 page_version.code = r.code
                 body = r.body if isinstance(r.body, unicode) else r.body.decode('utf-8')
@@ -123,14 +123,14 @@ class WarehouseBase(object):
 
     def cache_url(self, url, status, response=None):
         url_hash = md5(url).hexdigest()
-        page = Page.one({'url_hash':url_hash})
+        page = Page().one({'url_hash':url_hash})
         if not page:
-            page = Page()
+            page = New(Page())
             page.url = url if isinstance(url, unicode) else url.decode('utf-8')
             page.url_hash = url_hash if isinstance(url_hash, unicode) else url_hash.decode('utf-8')
         page.save()
         if not response: return
-        page_version = PageVersion()
+        page_version = New(PageVersion())
         page_version.page= page._id
         page_version.code = response.code
         body = response.body if isinstance(response.body, unicode) else response.body.decode('utf-8')
@@ -154,8 +154,8 @@ class Warehouse(WarehouseBase):
         pac = None
         if bsp_pac:
             pac = bsp_pac
-        if not Site.one({"url_hash": identifier}):
-            site = Site()
+        if not Site().one({"url_hash": identifier}):
+            site = New(Site())
             site.url = starturl if isinstance(starturl, unicode) else starturl.decode('utf-8')
             site.url_hash = identifier if isinstance(identifier, unicode) else identifier.decode('utf-8')
             site.inserted_at = datetime.utcnow()
