@@ -10,6 +10,7 @@ Copyright (c) 2010 __ThePeppersStudio__. All rights reserved.
 import sys
 import os
 import re
+from urllib import unquote
 from dateutil.parser import parse as dateParse
 from googleanalytics import Connection
 from googleanalytics.exception import GoogleAnalyticsClientError
@@ -17,15 +18,15 @@ from bububa.SuperMario.Mario import Mario
 
 class GoogleResult:
     
-    def __init__(self, url, unescape_url, title, description, ranking):
-        self.url = url
+    def __init__(self, unescape_url, title, description, ranking):
+        self.url = unquote(unescape_url)
         self.unescape_url = unescape_url
         self.title = title
         self.description = description
         self.ranking = ranking
     
     def __repr__(self):
-        return '<%s(url=%s,title=%s, ranking=%d)>'%(self.__class__.__name__, self.url, self.title, self.ranking)
+        return '<%s(url=%s, title=%s, ranking=%d)>'%(self.__class__.__name__, self.url, self.title, self.ranking)
     
 
 class GoogleSearch:
@@ -85,18 +86,18 @@ class GoogleSearch:
             raise GoogleException('Fail to open page', 502)
         results = self._parse_response(response.body)
         if not results: return []
-        return [GoogleResult('http://%s'%result['url'], result['unescape_url'], result['title'], result['description'], page*self.number_of_results+i+1) for i, result in enumerate(results)]
+        return [GoogleResult(result['unescape_url'], result['title'], result['description'], page*self.number_of_results+i+1) for i, result in enumerate(results)]
     
     def _parse_response(self, page):
         pattern = re.compile('<!--m--><li([^^]*?)<!--n-->', re.S)
         wrappers = pattern.findall(page)
         if not wrappers: return None
-        patterns = {'unescape_url':'<h3 class=r><a href="([^^]*?)"[^^]*?</h3>', 'title':'<h3 class=r><a[^^]*?>([^^]*?)</a></h3>', 'description':'<div class="s">([^^]*?)。<br>', 'url':'<cite>([^^]*?) - </cite>'}
+        patterns = {'unescape_url':'<h3 class=r><a href="([^^]*?)"[^^]*?</h3>', 'title':'<h3 class=r><a[^^]*?>([^^]*?)</a></h3>', 'description':'<div class="s">([^^]*?)<br>'}
         response = []
         for wrapper in wrappers:
             tmp = {}
-            for key, pattern in patterns.items():
-                pattern = re.compile(pattern, re.S)
+            for key, p in patterns.items():
+                pattern = re.compile(p, re.S)
                 res = pattern.findall(wrapper)
                 if res: tmp[key] = res[0]
                 else: tmp[key] = None
