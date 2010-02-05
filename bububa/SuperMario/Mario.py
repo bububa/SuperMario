@@ -143,7 +143,7 @@ class HTTPResponse(object):
         self.args = args
     
     def __repr__(self):
-        return "<%s status %s for %s>" % (self.__class__.__name__, self.code, self.effective_url.decode('utf-8'))
+        return "<%s status %s for %s>" % (self.__class__.__name__, self.code, self.effective_url)
     
     def dump(self):
         fp = StringIO()
