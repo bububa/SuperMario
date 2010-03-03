@@ -287,6 +287,7 @@ class MarioBase(object):
         self.proxy = proxy
     
     def set_proxies_list(self, proxies):
+        self.proxies = proxies
         return self.proxies
     
     def set_post_body(self, post_body):
