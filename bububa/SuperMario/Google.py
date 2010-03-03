@@ -47,6 +47,7 @@ class GoogleSearch:
     def count(self, query=None, domain=None):
         if not domain: domain = self.domain
         if not query: query = self.query
+        query = re.sub(' ', '%20', query)
         url = GoogleSearch.SEARCH_URL%{'domain':domain, 'query':query}
         mario = Mario()
         mario.set_proxies_list(self.proxies)
@@ -63,6 +64,7 @@ class GoogleSearch:
     def search(self, query=None, number_of_pages=1, domain=None):
         if not domain: domain = self.domain
         if not query: query = self.query
+        query = re.sub(' ', '%20', query)
         results = []
         for page in xrange(0, number_of_pages):
             results.extend(self._get_page(query, page, domain))
